@@ -1,0 +1,15 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "echo '{\"hookSpecificOutput\":{\"hookEventName\":\"SessionStart\",\"additionalContext\":\"[핸드오프 프로토콜] 이 프로젝트는 슬라이스마다 핸드오프+/clear로 진행한다. 슬라이스/코드 작업 시작 전 반드시 먼저 Read 하라: (1) .dev/handoffs/NEXT.md — 현재 상태+다음 할 일(고정 진입점) (2) PLAN.md 해당 슬라이스. 이전 결정·구조·규칙·import 컨벤션이 거기 있다.\"}}'",
+            "statusMessage": "핸드오프 프로토콜 주입"
+          }
+        ]
+      }
+    ]
+  }
+}

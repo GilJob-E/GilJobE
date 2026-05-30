@@ -49,19 +49,32 @@ gje는 vLLM + `google/gemma-4-E4B-it`(네이티브 AV 멀티모달) 위에서 �
   pyproject.toml                # deps + pytest(pythonpath=["src"])
   README.md                     # 스코프, 실행법, 스파이크 결과 기록
   web/index.html                # 데모: getUserMedia → RTCPeerConnection → POST /offer
-  src/giljobe/
-    signals.py                  # [VERBATIM 복사] NonVerbalSignal/EvaluationSignal/NONVERBAL_STATES
-    window_assembly.py          # [VERBATIM] assemble_video_url/assemble_audio_url
-    vllm_client.py              # [VERBATIM] VllmClient/default_vllm_client
-    vllm_stream.py              # [VERBATIM] iter_sse_delta_text
-    critic.py                   # [리팩토링] WindowCritic: read_nonverbal/evaluate_window + transcribe_window(신규)
-    transcriber.py              # [신규] Transcriber 프로토콜 + GemmaNative/FasterWhisper
-    windowing.py                # [신규/재구현] TurnWindower: 라이브 버퍼→3s/16s 슬라이스 (gje turn_pipeline 대체)
-    ingest.py                   # [신규] aiortc 트랙 소비자: video→1fps JPEG, audio→16k mono PCM
-    emit.py                     # [신규] WindowRecord 스키마 + Sink(SSE/JSONL/Webhook)
-    server.py                   # [신규] aiohttp: POST /offer, GET /signals(SSE), /turn/*, 정적 web/
-    mocks.py                    # [신규] MockCritic/MockTranscriber/SlowMockCritic (GPU 없이 테스트)
+  src/giljobe/                  # ★ 계층형 subpackage (관심사별, 평면 금지). 각 폴더에 빈 __init__.py.
     config.py                   # [신규] 환경변수: VLLM_BASE_URL, STT 백엔드, 윈도우 크기, 싱크
+    models/                     # 도메인 계약 (순수 데이터, giljobe 내부 의존 0)
+      signals.py                # [VERBATIM 복사] NonVerbalSignal/EvaluationSignal/NONVERBAL_STATES
+      records.py                # [신규] WindowRecord/turn_end 스키마 (emit가 직렬화)
+    llm/                        # vLLM 전송
+      vllm_client.py            # [VERBATIM] VllmClient/default_vllm_client
+      vllm_stream.py            # [VERBATIM] iter_sse_delta_text
+    media/                      # 미디어 인코딩·수신
+      window_assembly.py        # [VERBATIM] assemble_video_url/assemble_audio_url
+      ingest.py                 # [신규] aiortc 트랙 소비자: video→1fps JPEG, audio→16k mono PCM
+    analysis/                   # 추론 (모델 호출; models·llm·media 의존)
+      critic.py                 # [리팩토링] WindowCritic: read_nonverbal/evaluate_window + transcribe_window(신규)
+      transcriber.py            # [신규] Transcriber 프로토콜 + GemmaNative/FasterWhisper
+      mocks.py                  # [신규] MockCritic/MockTranscriber/SlowMockCritic (GPU 없이 테스트)
+    pipeline/                   # 오케스트레이션 (analysis·media 의존)
+      windowing.py              # [신규/재구현] TurnWindower: 라이브 버퍼→3s/16s 슬라이스 (gje turn_pipeline 대체)
+    emit/                       # 송출 (models 의존)
+      sink.py                   # [신규] Sink 프로토콜 + SSE/JSONL/Webhook (레코드 스키마는 models/records.py)
+    server/                     # 앱 진입점 (전 계층 의존)
+      app.py                    # [신규] aiohttp: POST /offer, GET /signals(SSE), /turn/*, 정적 web/
+
+  # 의존 방향(단방향): server → pipeline → analysis → {models, llm, media}, emit → models.
+  # Import 컨벤션: 같은 subpackage sibling=relative(`from .vllm_stream import`),
+  #                다른 subpackage=absolute(`from giljobe.models.signals import`). (Slice 1에서 확정·적용)
+  # YAGNI: 빈 subpackage를 미리 만들지 말 것 — 그 파일이 생기는 슬라이스에서 함께 생성.
   tests/
     test_window_assembly.py     # gje 테스트 포팅(인코딩 라운드트립/캡)
     test_windowing.py           # cadence/eot/race/레인독립 (Mock + 스레드풀)
@@ -108,21 +121,21 @@ requests            # VllmClient(포팅, 블로킹)
 
 ## 3. critic 리팩토링 + Transcriber
 
-`critic.py` = gje `native_eval.WindowEvaluator`(`/home/kio/workspace/gje/src/local_infer/native_eval.py`) 리팩토링:
+`analysis/critic.py` = gje `native_eval.WindowEvaluator`(`/home/kio/workspace/gje/src/local_infer/native_eval.py`) 리팩토링:
 - `read_nonverbal(...)→NonVerbalSignal` **그대로**(채널① 비언어 비평 = 핵심 포팅), `evaluate_window(...)→EvaluationSignal` 그대로(채널②, **이 슬라이스에선 선택/부차** — 포팅은 하되 기본 핫패스 아님), `_ask_json/_extract_json/_repair_truncated_json/NONVERBAL_SYSTEM/_video_part/_audio_part/MODEL` 그대로.
 - **신규 `transcribe_window(pcm, *, t, window_s, sample_rate=16000)→str`**: 주입된 `Transcriber`에 위임(critic은 STT를 박지 않음).
 
-`transcriber.py`:
+`analysis/transcriber.py`:
 - `Transcriber` 프로토콜: `transcribe(pcm: bytes, *, sample_rate=16000) -> str`.
 - `GemmaNativeTranscriber`(같은 vLLM, VRAM 추가 0): `assemble_audio_url`+`_audio_part` 재사용, plain text 반환(JSON 파싱 안 함). 한국어 ASR 시스템 프롬프트(요지): *"한국어 음성 전사기. 들리는 그대로 정확히 받아쓰되 요약·번역·해석·평가 금지. 음성 없으면 빈 문자열. JSON·설명 없이 전사 텍스트만."* `temperature=0.0`.
 - `FasterWhisperTranscriber`(폴백, lazy import): `WhisperModel("large-v3-turbo", device="cpu", compute_type="int8")`, Int16 PCM→float32 정규화→`transcribe(language="ko")`, 모델 1회 로드 재사용. CPU라 4090 2장은 vLLM 전용 유지.
-- `mocks.py`: `MockCritic`(고정 NonVerbalSignal/EvaluationSignal, vLLM/ffmpeg 불요), `MockTranscriber`(고정 문자열), `SlowMockCritic`(레인 독립성 테스트용 sleep).
+- `analysis/mocks.py`: `MockCritic`(고정 NonVerbalSignal/EvaluationSignal, vLLM/ffmpeg 불요), `MockTranscriber`(고정 문자열), `SlowMockCritic`(레인 독립성 테스트용 sleep).
 
 ---
 
 ## 4. 출력 JSON 스키마 + 송출 (트레이드오프)
 
-`emit.py` `WindowRecord` — 면접관 LLM이 먹는 `.json`. 비언어 윈도우 1개당 1레코드, **채널① 신호 + 해당 구간 전사 병합**. 신호는 완료순(시간순 아님)으로 나오므로 레코드는 `t`로 self-describing → **소비자가 `t`로 정렬**.
+`models/records.py`의 `WindowRecord` — 면접관 LLM이 먹는 `.json`(`emit/sink.py`가 송출). 비언어 윈도우 1개당 1레코드, **채널① 신호 + 해당 구간 전사 병합**. 신호는 완료순(시간순 아님)으로 나오므로 레코드는 `t`로 self-describing → **소비자가 `t`로 정렬**.
 
 ```json
 { "type":"window", "session_id":"iv-…", "t":4.5, "window_s":3.0,
@@ -144,13 +157,13 @@ requests            # VllmClient(포팅, 블로킹)
 | (b) WebRTC DataChannel→브라우저 | 최저지연, 미디어와 동일 전송 | **방향이 틀림**(소비자는 서버측), 브라우저 릴레이 1홉 강제, 내구성 없음 |
 | (c) 다운스트림 URL로 POST 웹훅 | 푸시, 비결합, 리스너 없어도 진행 | per-window HTTP 비용, 재시도/순서/백오프 필요, URL 알아야·살아있어야, 디버그/리플레이 난해 |
 
-**추천(v1): (a) SSE + JSONL**. 소비자가 서버측이라 (b)는 토폴로지가 틀리고, (a)는 기존 async/aiohttp 스택과 추가 인프라 0, JSONL이 테스트를 라이브 소비자 없이 assert 가능하게 함. `emit.py`는 `Sink` 프로토콜로 전송 교체 가능하게 만들어, 실제 면접관 LLM URL이 생기면 (c) `WebhookSink`를 config로 추가. 데모 가시화용으로 `index.html`이 `/signals`를 EventSource로 tail.
+**추천(v1): (a) SSE + JSONL**. 소비자가 서버측이라 (b)는 토폴로지가 틀리고, (a)는 기존 async/aiohttp 스택과 추가 인프라 0, JSONL이 테스트를 라이브 소비자 없이 assert 가능하게 함. `emit/sink.py`는 `Sink` 프로토콜로 전송 교체 가능하게 만들어, 실제 면접관 LLM URL이 생기면 (c) `WebhookSink`를 config로 추가. 데모 가시화용으로 `index.html`이 `/signals`를 EventSource로 tail.
 
 ---
 
 ## 5. 윈도잉 / 동시성 (gje turn_pipeline 재구현, giljobe 소유)
 
-`windowing.py`는 gje `SlidingWindowPipeline` 불변식을 그대로 유지하며 재구현:
+`pipeline/windowing.py`는 gje `SlidingWindowPipeline` 불변식을 그대로 유지하며 재구현:
 - `add_frame(t,jpeg)`/`add_audio(t,pcm)` lock-guarded append(asyncio ingest에서 호출).
 - **nv 그리드(3s)**: `poll(now)`가 `_next_nv_end`를 3.0씩 전진, `[start,start+3)` 슬라이스, `frames` 있으면 `nv_exec`에 submit. submit-후-전진을 lock 안에서 → concurrent poll에도 중복 없음.
 - **stt 그리드**: nv와 동일 3s 그리드로 돌려 레코드별 nv·전사 페어링(코어스 6–8s는 config 노브; 기본 nv 정렬, turn_end가 단편 보정).
@@ -178,14 +191,14 @@ requests            # VllmClient(포팅, 블로킹)
 
 ## 7. 빌드 순서 (각 단계 독립 검증)
 
-1. **스캐폴드 + verbatim 복사** — 레포/pyproject, `signals/window_assembly/vllm_client/vllm_stream`를 `/home/kio/workspace/gje/src/local_infer/`에서 `src/giljobe/`로 복사(import를 `giljobe.`로). 검증: `test_window_assembly`. *GPU 불요.*
+1. **스캐폴드 + verbatim 복사** — 레포/pyproject, `signals→models/`·`window_assembly→media/`·`vllm_client`+`vllm_stream`→`llm/`로 계층 배치 복사(import 컨벤션 §1; relative sibling 덕에 무수정). 검증: `test_window_assembly`. *GPU 불요.*
 2. **★ STT 스파이크(게이팅)** — vLLM 기동, `test_spike_transcribe` 두 클립, 결정 기록. → transcriber 기본값 확정.
-3. **critic 리팩토링 + transcriber + mocks** — `critic.py`(+`transcribe_window`), `transcriber.py`(Gemma 항상; faster-whisper는 2 실패 시), `mocks.py`. 검증: 실 vLLM에서 한국어 전사/`MockCritic` 오프라인.
-4. **windowing** — 재구현. 검증: `test_windowing`(mock). *GPU 불요.*
-5. **emit + 전송** — `emit.py`(WindowRecord/Sink). 검증: `test_emit_schema`. *GPU 불요.*
+3. **critic 리팩토링 + transcriber + mocks** — `analysis/`에 `critic.py`(+`transcribe_window`)·`transcriber.py`(Gemma 항상; faster-whisper는 2 실패 시)·`mocks.py`. 검증: 실 vLLM에서 한국어 전사/`MockCritic` 오프라인.
+4. **windowing** — `pipeline/windowing.py` 재구현. 검증: `test_windowing`(mock). *GPU 불요.*
+5. **emit + 전송** — `emit/sink.py`(Sink) + `models/records.py`(WindowRecord). 검증: `test_emit_schema`. *GPU 불요.*
 6. **e2e mock** — windower+mock+emit 배선. 검증: `test_e2e_mock` JSONL. *GPU/브라우저 불요.*
-7. **ingest** — aiortc 소비자(video→1fps JPEG, audio→16k PCM). 검증: `test_ingest_slicing`(합성 프레임).
-8. **server + 브라우저** — `server.py`(/offer,/signals,/turn/*,정적), `web/index.html`. 검증: localhost 수동 스모크.
+7. **ingest** — `media/ingest.py` aiortc 소비자(video→1fps JPEG, audio→16k PCM). 검증: `test_ingest_slicing`(합성 프레임).
+8. **server + 브라우저** — `server/app.py`(/offer,/signals,/turn/*,정적), `web/index.html`. 검증: localhost 수동 스모크.
 9. **라이브 e2e** — `test_e2e_live` 클립+실 critic+선택 transcriber, evidence JSON.
 
 ---
