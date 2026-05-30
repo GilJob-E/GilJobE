@@ -13,6 +13,7 @@ Python 3.12 · aiortc(WebRTC) · gje(MMM)=vLLM+Gemma-4-E4B(네이티브 AV) · f
 슬라이스 단위 진행(핸드오프+`/clear`). 진입점 → `.dev/handoffs/NEXT.md`.
 - **Slice 1 완료**: 계층형 src 스캐폴드 + gje 4모듈 verbatim 복사.
 - **Slice 2 완료**: ★ STT 필요성 스파이크 — **PASS**.
+- **Slice 3 완료**: critic 포팅(`WindowCritic`) + 오프라인 더블(`MockCritic` 등). 적대적 리뷰 통과, 라이브 PASS(`tests/evidence/critic-live.json`).
 - 구현 설계·빌드 순서 → **`PLAN.md`**
 - 프로젝트 지도·작업 규칙 → **`CLAUDE.md`**, `.claude/rules/`
 

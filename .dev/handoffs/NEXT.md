@@ -3,24 +3,27 @@
 > SessionStart 훅이 이 파일을 가리킨다. **매 슬라이스 종료 시 이 파일을 다음 슬라이스로 갱신**한다.
 > 규칙: `CLAUDE.md` "세션 시작 프로토콜". 전체 빌드 순서: `PLAN.md §7`.
 
-## 지금 상태 (최근 갱신: Slice 2 완료 시점)
+## 지금 상태 (최근 갱신: Slice 3 완료 시점)
 - **완료: Slice 1** — 스캐폴드 + gje 4모듈 verbatim 복사 + 계층형 src. 상세 → `.dev/handoffs/slice-01-scaffold.md`.
 - **완료: Slice 2** — ★ STT 필요성 스파이크 **PASS**. 상세 → `.dev/handoffs/slice-02-stt-spike.md`.
   - **결정: `GemmaNativeTranscriber` 기본 STT, faster-whisper 안 붙임**(VRAM 추가 0). 정본 evidence: `tests/evidence/spike-transcribe.json`.
-  - 신규: `analysis/transcriber.py`(Transcriber 프로토콜 + GemmaNative), `tests/test_spike_transcribe.py`.
-  - ★ 발견·수정 버그: **한국어 user 지시문은 전사에 echo됨 → user-turn 텍스트는 영어 `"Transcribe."`** (transcriber.py 주석).
-  - ★ 데이터 주의: gje 클립(vid_0001/0033)은 **영어**라 부적합. 스파이크는 **`kor.mp4`**(repo 루트, 한국어, gitignore라 미커밋)로 함. 없으면 spike skip.
-  - `pytest -q` **6 passed**. GPU 위생 OK(vLLM stop, VRAM 해제 확인).
+  - ★ 버그: **한국어 user 지시문은 전사에 echo됨 → user-turn 텍스트는 영어 `"Transcribe."`** (transcriber.py 주석).
+  - ★ 데이터 주의: gje 클립(vid_0001/0033)은 **영어**라 부적합. 라이브는 **`kor.mp4`**(repo 루트, 한국어, gitignore라 미커밋). 없으면 라이브 테스트 skip.
+- **완료: Slice 3** — critic 포팅 + mocks. 상세 → `.dev/handoffs/slice-03-critic.md`.
+  - 신규: `analysis/critic.py`(`WindowCritic` = gje `WindowEvaluator` 포팅 + 신규 `transcribe_window` 위임), `analysis/mocks.py`(`MockCritic`/`MockTranscriber`/`SlowMockCritic`), `test_critic_json.py`·`test_mocks.py`(오프라인)·`test_critic_live.py`(실 vLLM).
+  - 핵심 결정: critic은 STT를 박지 않고 주입 `Transcriber`에 위임(같은 client 공유, VRAM 0). 더블은 **상태 없는 순수**(동시 레인 카운터 플레이크 회피). **Critic 프로토콜 미작성**(YAGNI — Slice 4에서 필요시).
+  - ★ 적대적 리뷰(7-에이전트): fidelity·interface 0건, 확정 1건(레인독립 테스트 타이밍 플레이크 → 구조적 증명으로 수정, 4-loader 60/60).
+  - **오프라인 20 passed + 라이브 PASS**(nv=engaged/0.60, 한국어 전사, compact eval). 정본 `tests/evidence/critic-live.json`. GPU 위생 OK.
 
-## 다음 할 일 = Slice 3: critic 리팩토링 + mocks — PLAN §3 / §7-3
-1. 먼저 `PLAN.md §3` + `.dev/handoffs/slice-02-stt-spike.md`(다음 슬라이스 섹션) 정독.
-2. **`analysis/critic.py`**: gje `native_eval.WindowEvaluator`(`/home/kio/workspace/gje/src/local_infer/native_eval.py`) → `WindowCritic` 리팩토링.
-   - `read_nonverbal`(채널① 핵심)·`evaluate_window`(채널② 부차) + 헬퍼(`_ask_json/_extract_json/_repair_truncated_json/NONVERBAL_SYSTEM/_video_part/_audio_part/MODEL`) **그대로 포팅**.
-   - **신규 `transcribe_window(pcm,*,t,window_s,sample_rate=16000)→str`**: 주입된 `Transcriber`(기본 GemmaNative)에 위임(critic은 STT를 박지 않음).
-   - import: cross-subpackage=absolute(`from giljobe.models.signals…`, `…media.window_assembly`, `…llm.vllm_client`), sibling=relative(`from .transcriber import`).
-3. **`analysis/mocks.py`**: `MockCritic`(고정 신호, vLLM/ffmpeg 불요)·`MockTranscriber`(고정 문자열)·`SlowMockCritic`(레인 독립 테스트용 sleep).
-4. transcriber: GemmaNative는 **이미 완료**. faster-whisper는 **안 만든다**(스파이크 PASS — 인터페이스 뒤 폴백 자리만 유지).
-5. 검증: 실 vLLM에서 `WindowCritic.transcribe_window` 한국어 전사 / `MockCritic` 오프라인. (vLLM 기동 시 GPU 위생 — 끝나면 `docker stop` + `nvidia-smi`.)
+## 다음 할 일 = Slice 4: windowing — PLAN §5 / §7-4
+1. 먼저 `PLAN.md §5`(윈도잉/동시성) + `.dev/handoffs/slice-03-critic.md`(다음 슬라이스 섹션) 정독.
+2. **`pipeline/windowing.py`**: gje `SlidingWindowPipeline` 불변식 유지 재구현(giljobe 소유).
+   - `add_frame(t,jpeg)`/`add_audio(t,pcm)` lock-guarded. `poll(now)`로 nv 그리드(3s) 전진·`[start,start+3)` 슬라이스·`nv_exec` submit(submit-후-전진을 lock 안에서 → 중복 없음).
+   - stt 그리드 = nv와 같은 3s(레코드별 nv·전사 페어링). eval 그리드(16s, 선택): `_covered_until`은 **연속 prefix 성공시만** 전진(실패/지연은 eot tail이 재커버).
+   - 턴 경계: `/turn/start`=reset, `/turn/end(now)`=부분윈도우+최종 stt flush, compact tail을 `tail_exec`로, `wait(timeout)`, `turn_end`(transcript_full) emit, `close()`로 늦은 emit no-op. worker→loop는 **`loop.call_soon_threadsafe`만**.
+3. 검증: `test_windowing`(mock + 실 스레드풀) — cadence(3s/16s)·eot tail·실패윈도우 tail 복구·**중복 없음**·**레인독립(`SlowMockCritic`)**·stt 레인 1윈도우 1전사. *GPU/브라우저 불요.*
+4. 이 슬라이스 산출물 재사용: `MockCritic`(배선)·`SlowMockCritic`(레인독립)·`MockTranscriber`. import: cross=absolute(`from giljobe.analysis…`).
+5. 리스크(PLAN §리스크): **이벤트루프 블로킹**(critic/STT를 ingest 코루틴서 직접 호출 금지, 반드시 executor 경유), 완료순 emit(소비자가 `t`로 정렬).
 
 ## 불변 규칙 (매 슬라이스 공통)
 - src = 계층형 subpackage. import: **intra=relative / cross=absolute** (PLAN.md §1, 메모 `[[layered-src-structure]]`).

@@ -10,7 +10,7 @@
       "ss": 0.0,
       "dur": 3.0,
       "pcm_bytes": 96000,
-      "latency_s": 0.147,
+      "latency_s": 0.148,
       "chars": 23,
       "hangul": true,
       "transcript": "안녕하세요. 지원자 이나래입니다. 저는 대"
@@ -30,7 +30,7 @@
       "ss": 20.0,
       "dur": 3.0,
       "pcm_bytes": 96000,
-      "latency_s": 0.158,
+      "latency_s": 0.159,
       "chars": 27,
       "hangul": true,
       "transcript": "특기는 걸 성공했고 대상도 수상할 수 있었습니다."
@@ -40,7 +40,7 @@
       "ss": 30.0,
       "dur": 3.0,
       "pcm_bytes": 96000,
-      "latency_s": 0.158,
+      "latency_s": 0.157,
       "chars": 22,
       "hangul": true,
       "transcript": "앞으로 SK 하이닉스에서도 차세대 메모리"
@@ -50,7 +50,7 @@
       "ss": 10.0,
       "dur": 6.0,
       "pcm_bytes": 192000,
-      "latency_s": 0.397,
+      "latency_s": 0.395,
       "chars": 57,
       "hangul": true,
       "transcript": "난 아르바이트에 한 번도 지각하지 않았고 성적 장학금도 계속 받았기 때문입니다. 이런 태도 덕분에 공정"

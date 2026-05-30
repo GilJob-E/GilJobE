@@ -1,0 +1,37 @@
+{
+  "slice": 3,
+  "check": "critic-live",
+  "model": "google/gemma-4-E4B-it",
+  "sample_rate": 16000,
+  "clip": "kor.mp4",
+  "clip_desc": "한국어 면접 자기소개(SK하이닉스 지원), 약 38s. Slice 2 스파이크와 동일 클립. 사용자 제공.",
+  "verdict": "PASS",
+  "decision": "WindowCritic 포팅이 실 E4B에서 end-to-end 동작. 채널①(read_nonverbal)·신규 transcribe_window(주입 위임)·채널②(evaluate_window compact) 모두 정상. Slice 4 windowing이 이 critic을 그대로 레인에 물릴 수 있음.",
+  "rubric": {
+    "nonverbal_valid": "PASS — state가 NONVERBAL_STATES 안(engaged), intensity 0–1(0.60), note 한국어 구체 단서. 윈도우 좌표(t/window_s) echo 확인.",
+    "transcribe_delegation": "PASS — critic.transcribe_window가 주입된 GemmaNativeTranscriber로 위임해 한국어 verbatim 전사를 냄(빈출력/번역/거부 아님). Slice 2가 transcriber 단독을 봤고, 여기선 critic 경유 위임 경로를 확인.",
+    "eval_compact": "PASS — evaluate_window(compact=True)가 EvaluationSignal(compact=True, summary 1 + critique 2) 정상 반환. 포팅 무결성 확인(채널②는 이 슬라이스 부차).",
+    "latency_ok": "PASS — nv read 0.70~1.81s(첫 호출이 멀티모달 그래프 cold), 전사 0.16~0.24s. warm 후 3s cadence에 수용 가능. 라이브 누적 지연은 Slice 9 e2e에서 측정."
+  },
+  "windows": [
+    {"ss": 10.0, "dur": 3.0, "frames": 3, "nv_state": "engaged", "nv_intensity": 0.6, "nv_latency_s": 1.808, "nv_note": "시선은 안정적이나, 미세한 입술 떨림과 약간의 긴장감이 관찰됨", "transcript": "난 아르바이트에 한 번도 지각하지 않았고 성적 장학금", "stt_latency_s": 0.242, "transcript_hangul": true},
+    {"ss": 20.0, "dur": 3.0, "frames": 3, "nv_state": "engaged", "nv_intensity": 0.6, "nv_latency_s": 0.695, "nv_note": "시선은 정면을 응시하고 있으며, 미세한 미소가 유지되고 있음", "transcript": "특기는 걸 성공했고 대상도 수상할 수 있었습니다.", "stt_latency_s": 0.16, "transcript_hangul": true}
+  ],
+  "eval_compact": {
+    "ss": 10.0, "dur": 6.0, "latency_s": 1.162, "compact": true,
+    "key_observations": ["아르바이트에 지각하지 않고 장학금을 계속 받으며 좋은 태도를 유지했다는 내용이다."],
+    "critique": ["구체적인 사례 부족", "자기 자랑처럼 들릴 수 있음"]
+  },
+  "adversarial_review": {
+    "method": "7-agent workflow — fidelity/imports/interface_compat/tests 차원별 리뷰 + 발견별 독립 검증자(실재성+슬라이스 범위).",
+    "fidelity": "0 findings — critic.py가 gje native_eval.py와 의도된 델타(rename·import·transcriber 주입·transcribe_window)만 다르고 포팅 충실.",
+    "interface_compat": "0 findings — MockCritic/SlowMockCritic이 WindowCritic 메서드 표면을 미러링, MockTranscriber가 Transcriber 프로토콜 충족.",
+    "confirmed_fixed": "1건(minor) — test_slow_mock_eval_does_not_block_nv_in_threadpool의 상한 타이밍 단언이 GIL 경합 하 플레이크. 벽시계 마진 대신 구조적 증명(eval 2s 중 nv 1s 내 완료 + eval 미완 단언)으로 수정. 4-busy-loader 하 60/60 통과 재확인.",
+    "dropped": "2건(imports_layering) — 하나는 결함 아닌 긍정 노트, 하나는 transcriber 경유 transitive import nit(비실재·범위 밖)."
+  },
+  "caveats": [
+    "단일 클립(스크립트성 자기소개, 비교적 깨끗한 음향). 노이즈·즉흥발화·다화자·실 WebRTC Opus 경로는 미검증 → Slice 9 라이브 e2e에서 추가 클립으로 재확인.",
+    "전사 소수 어절 오인식(특기는 걸 등)은 3s 경계 절단·단일클립 음향 수준 — transcript_full(턴 합본)이 보정(PLAN §5). 실패 아님.",
+    "지연은 warm vLLM·짧은 윈도우 측정치. 첫 nv read(1.81s)는 멀티모달 그래프 cold 비용."
+  ]
+}
