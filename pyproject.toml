@@ -1,0 +1,19 @@
+[project]
+name = "giljobe"
+version = "0.1.0"
+description = "면접 시뮬레이션 입력단 — WebRTC AV → gje(MMM) 비언어 비평 + STT 전사 → .json 송출"
+requires-python = ">=3.11"
+dependencies = [
+  "requests",  # vllm_client (블로킹 HTTP)
+]
+
+[project.optional-dependencies]
+test = ["pytest"]
+whisper = ["faster-whisper"]  # STT 폴백 (스파이크 FAIL 시에만)
+
+# 무거운 런타임 deps(aiortc~=1.14, av, aiohttp, numpy, Pillow)는
+# ingest/server 슬라이스에서 추가·설치(각 슬라이스 독립 검증 원칙).
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
