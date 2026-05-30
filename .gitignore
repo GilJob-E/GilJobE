@@ -1,0 +1,23 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# venv
+.venv/
+venv/
+
+# build artifacts (수정 금지 산출물)
+build/
+dist/
+out/
+
+# secrets / env (HF_TOKEN 등 — 커밋 금지)
+.env
+.env.*
+
+# local Claude settings (team-shared rules는 커밋, local은 제외)
+.claude/settings.local.json
