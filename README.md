@@ -10,9 +10,19 @@
 Python 3.12 · aiortc(WebRTC) · gje(MMM)=vLLM+Gemma-4-E4B(네이티브 AV) · faster-whisper(STT 폴백) · aiohttp · ffmpeg
 
 ## 상태
-초기 스캐폴드 단계. 구현은 시작 전.
+슬라이스 단위 진행(핸드오프+`/clear`). 진입점 → `.dev/handoffs/NEXT.md`.
+- **Slice 1 완료**: 계층형 src 스캐폴드 + gje 4모듈 verbatim 복사.
+- **Slice 2 완료**: ★ STT 필요성 스파이크 — **PASS**.
 - 구현 설계·빌드 순서 → **`PLAN.md`**
 - 프로젝트 지도·작업 규칙 → **`CLAUDE.md`**, `.claude/rules/`
+
+## STT 결정 (Slice 2 스파이크, 2026-05-30)
+**`GemmaNativeTranscriber`를 기본 STT로 채택. faster-whisper 안 붙임.**
+같은 vLLM E4B(네이티브 AV)로 한국어를 verbatim 전사 — VRAM 추가 0, 저지연(warm 0.16~0.39s/window).
+실측: `tests/evidence/spike-transcribe.json`(판정·루브릭·발견버그), `…raw.json`(측정치).
+- 주의: 한국어 user 지시문은 전사에 echo되므로 user-turn 텍스트는 영어 `"Transcribe."`로 둔다(transcriber.py 주석).
+- faster-whisper는 인터페이스(`Transcriber`) 뒤 폴백으로 유지 — 노이즈/즉흥 한국어에서 품질 미달이 확인되면 config 한 줄로 교체.
+- 검증 한계: 단일 클립(스크립트성 자기소개). 실 WebRTC·노이즈·다화자는 Slice 9 라이브 e2e에서 재확인.
 
 ## gje 원본
 gje(MMM)는 `/home/kio/workspace/gje`의 별도 repo다. **import하지 않고**, 필수 모듈만 `src/giljobe/`로 **복사**해 리팩토링한다. (원본 디렉토리는 이동/수정하지 않는다.)

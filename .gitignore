@@ -21,3 +21,11 @@ out/
 
 # local Claude settings (team-shared rules는 커밋, local은 제외)
 .claude/settings.local.json
+.claude/scheduled_tasks.lock
+
+# 테스트 미디어 픽스처(바이너리 — 커밋 안 함; 스파이크/라이브 e2e가 로컬에서 참조).
+# 재현엔 한국어 오디오 클립이 repo 루트에 필요(handoff 참고).
+*.mp4
+*.wav
+*.m4a
+*.webm
