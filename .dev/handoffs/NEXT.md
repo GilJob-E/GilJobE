@@ -3,7 +3,7 @@
 > SessionStart 훅이 이 파일을 가리킨다. **매 슬라이스 종료 시 이 파일을 다음 슬라이스로 갱신**한다.
 > 규칙: `CLAUDE.md` "세션 시작 프로토콜". 전체 빌드 순서: `PLAN.md §7`.
 
-## 지금 상태 (최근 갱신: Slice 3 완료 시점)
+## 지금 상태 (최근 갱신: Slice 4 완료 시점)
 - **완료: Slice 1** — 스캐폴드 + gje 4모듈 verbatim 복사 + 계층형 src. 상세 → `.dev/handoffs/slice-01-scaffold.md`.
 - **완료: Slice 2** — ★ STT 필요성 스파이크 **PASS**. 상세 → `.dev/handoffs/slice-02-stt-spike.md`.
   - **결정: `GemmaNativeTranscriber` 기본 STT, faster-whisper 안 붙임**(VRAM 추가 0). 정본 evidence: `tests/evidence/spike-transcribe.json`.
@@ -11,20 +11,21 @@
   - ★ 데이터 주의: gje 클립(vid_0001/0033)은 **영어**라 부적합. 라이브는 **`kor.mp4`**(repo 루트, 한국어, gitignore라 미커밋). 없으면 라이브 테스트 skip.
 - **완료: Slice 3** — critic 포팅 + mocks. 상세 → `.dev/handoffs/slice-03-critic.md`.
   - 신규: `analysis/critic.py`(`WindowCritic` = gje `WindowEvaluator` 포팅 + 신규 `transcribe_window` 위임), `analysis/mocks.py`(`MockCritic`/`MockTranscriber`/`SlowMockCritic`), `test_critic_json.py`·`test_mocks.py`(오프라인)·`test_critic_live.py`(실 vLLM).
-  - 핵심 결정: critic은 STT를 박지 않고 주입 `Transcriber`에 위임(같은 client 공유, VRAM 0). 더블은 **상태 없는 순수**(동시 레인 카운터 플레이크 회피). **Critic 프로토콜 미작성**(YAGNI — Slice 4에서 필요시).
-  - ★ 적대적 리뷰(7-에이전트): fidelity·interface 0건, 확정 1건(레인독립 테스트 타이밍 플레이크 → 구조적 증명으로 수정, 4-loader 60/60).
-  - **오프라인 20 passed + 라이브 PASS**(nv=engaged/0.60, 한국어 전사, compact eval). 정본 `tests/evidence/critic-live.json`. GPU 위생 OK.
+  - 핵심 결정: critic은 STT를 박지 않고 주입 `Transcriber`에 위임(같은 client 공유, VRAM 0). 더블은 **상태 없는 순수**(동시 레인 카운터 플레이크 회피).
+- **완료: Slice 4** — windowing(`TurnWindower`). 상세 → `.dev/handoffs/slice-04-windowing.md`.
+  - 신규: `pipeline/windowing.py`(`TurnWindower` = gje `SlidingWindowPipeline` 불변식 유지 재구현 + **stt 레인**(nv와 같은 3s 그리드, 윈도우별 페어) + **transcript_full 합본 + turn_end**(compact tail eval을 turn_end.eval에 **임베드**) + **reset()** + 4레인 executor), `pipeline/__init__.py`, `tests/test_windowing.py`(17, 오프라인).
+  - `models/signals.py`에 **`TranscriptSignal`/`TurnEnd`** 추가(윈도워가 내는 in-process 이벤트 — emit이 pipeline 의존 안 하게 공유 계약을 models에).
+  - ★ 6-차원 적대적 리뷰: fidelity·concurrency·spec·emit **확정 결함 0건**, 확정 5건(전부 minor) 반영 — 부분 executor 주입 ValueError 가드, stt 타임아웃 경고(silent drop 방지), 실 스레드풀 stt-wait 테스트, eot 타임아웃 테스트, reset 문서 명확화.
+  - **오프라인 37 passed**(windowing 17). *GPU/브라우저 불요 슬라이스(라이브 게이트 없음).*
 
-## 다음 할 일 = Slice 4: windowing — PLAN §5 / §7-4
-1. 먼저 `PLAN.md §5`(윈도잉/동시성) + `.dev/handoffs/slice-03-critic.md`(다음 슬라이스 섹션) 정독.
-2. **`pipeline/windowing.py`**: gje `SlidingWindowPipeline` 불변식 유지 재구현(giljobe 소유).
-   - `add_frame(t,jpeg)`/`add_audio(t,pcm)` lock-guarded. `poll(now)`로 nv 그리드(3s) 전진·`[start,start+3)` 슬라이스·`nv_exec` submit(submit-후-전진을 lock 안에서 → 중복 없음).
-   - stt 그리드 = nv와 같은 3s(레코드별 nv·전사 페어링). eval 그리드(16s, 선택): `_covered_until`은 **연속 prefix 성공시만** 전진(실패/지연은 eot tail이 재커버).
-   - 턴 경계: `/turn/start`=reset, `/turn/end(now)`=부분윈도우+최종 stt flush, compact tail을 `tail_exec`로, `wait(timeout)`, `turn_end`(transcript_full) emit, `close()`로 늦은 emit no-op. worker→loop는 **`loop.call_soon_threadsafe`만**.
-3. 검증: `test_windowing`(mock + 실 스레드풀) — cadence(3s/16s)·eot tail·실패윈도우 tail 복구·**중복 없음**·**레인독립(`SlowMockCritic`)**·stt 레인 1윈도우 1전사. *GPU/브라우저 불요.*
-4. 이 슬라이스 산출물 재사용: `MockCritic`(배선)·`SlowMockCritic`(레인독립)·`MockTranscriber`. import: cross=absolute(`from giljobe.analysis…`).
-5. 리스크(PLAN §리스크): **이벤트루프 블로킹**(critic/STT를 ingest 코루틴서 직접 호출 금지, 반드시 executor 경유), 완료순 emit(소비자가 `t`로 정렬).
-6. ★ Slice 3 실측 근거(레인 설계 정당화 — 4090 1장, kor.mp4 38s 3레인 시뮬): 핫패스(nv 0.69s / stt 0.19s)는 **3s cadence 대비 4배 여유로 안 밀림**. 풀 eval은 **7.7s 롱폴**(핫패스의 ~10배)이고 **~33% JSON 절단** → eval 레인 워커는 예외 흡수 필수, eot은 풀 eval 말고 **compact tail**. 그리고 **`tail_exec`를 `eval_exec`와 반드시 분리**(공유 시 compact tail이 진행중 7.7s eval 뒤 1.2s 큐잉됨 — 실측). 원자료 `.dev/latency_sim.json`.
+## 다음 할 일 = Slice 5: emit + 전송 — PLAN §4 / §7-5
+1. 먼저 `PLAN.md §4`(출력 JSON 스키마 + 송출 트레이드오프) + `.dev/handoffs/slice-04-windowing.md`(다음 슬라이스 섹션) 정독.
+2. **`models/records.py`**: `WindowRecord`(type=window, nv 신호 + 해당 윈도우 전사 **병합**, `t`로 self-describing → 소비자가 t로 정렬) + turn_end JSON 스키마(transcript_full + 선택 eval). PLAN §4 예시.
+3. **`emit/sink.py`**: `Sink` 프로토콜 + **`SSESink`**(aiohttp StreamResponse `GET /signals`) + **`JSONLSink`**(리플레이/감사 로그, 테스트가 라이브 소비자 없이 assert) + (선택, config) `WebhookSink`. **추천 v1 = SSE + JSONL**(PLAN §4 트레이드오프표 — 소비자가 서버측 면접관 LLM이라 DataChannel은 토폴로지 틀림).
+4. **조인 책임**: 윈도워는 in-process 이벤트(`NonVerbalSignal`/`TranscriptSignal`/`EvaluationSignal`/`TurnEnd`)를 **완료순**으로 낸다. Sink가 `t`(nv·transcript는 **같은 t**)로 페어링해 `WindowRecord`로 직렬화. transcript_full은 이미 `TurnEnd`에 합본돼 있음 → Slice 4 산출물을 그대로 소비.
+5. 검증: `test_emit_schema`(WindowRecord 형태·nv+전사 병합·turn_end t-정렬·JSONL 유효성). *GPU/브라우저 불요.*
+6. import: **`emit`은 `models`만 의존**(pipeline 의존 금지 — Slice 4가 계약을 `models/signals.py`에 둔 이유). cross=absolute. 빈 `emit/__init__.py` 생성.
+7. 리스크: **완료순 emit**(레인 지연차로 순서 뒤섞임 → 소비자는 `t`로 정렬, `turn_end.transcript_full`이 보정). 단일 세션 가정(단일 `/signals` 토픽).
 
 ## 불변 규칙 (매 슬라이스 공통)
 - src = 계층형 subpackage. import: **intra=relative / cross=absolute** (PLAN.md §1, 메모 `[[layered-src-structure]]`).

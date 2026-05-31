@@ -45,6 +45,39 @@ class EvaluationSignal:
         return asdict(self)
 
 
+@dataclass
+class TranscriptSignal:
+    """채널 ① 페어 — 한 윈도우의 STT 전사. nv 신호(NonVerbalSignal)와 *같은* (t, window_s)로
+    내보내, 소비자가 윈도우별로 nv+전사를 조인할 수 있게 한다(병합 자체는 emit/Sink 몫).
+    per-window 부분전사는 실시간 UX용 — 면접관 LLM의 실제 입력은 turn_end.transcript_full."""
+
+    t: float  # nv와 동일한 윈도우 중심 시각(초) — 페어링 키
+    window_s: float  # 이 전사가 커버한 구간 길이(초)
+    text: str  # 전사 텍스트(무음/빈 윈도우면 "")
+
+    def to_dict(self) -> dict:
+        return asdict(self)
+
+
+@dataclass
+class TurnEnd:
+    """턴 종료 이벤트 — 윈도워가 /turn/end에서 1회 낸다. per-window 신호와 달리 답변 전체를
+    종합한다: t-정렬 전사 합본(면접관 LLM의 실제 입력)과 선택 compact eval(마지막 구간 비평).
+    신호는 완료순(시간순 아님)으로 emit되므로, 합본은 윈도워가 t로 정렬해 만든다."""
+
+    t: float  # 턴 종료 시각(초)
+    transcript_full: str  # 윈도우 전사들의 t-정렬 합본
+    eval: EvaluationSignal | None = None  # end-of-turn compact tail(있으면; 없으면 None)
+
+    def to_dict(self) -> dict:
+        # eval은 중첩 직렬화(asdict는 None 필드를 그대로 두지만 명시적으로 처리).
+        return {
+            "t": self.t,
+            "transcript_full": self.transcript_full,
+            "eval": self.eval.to_dict() if self.eval is not None else None,
+        }
+
+
 # 잠정 라벨 집합 — M5에서 E4B가 실제로 구분 가능한지 검증 후 확정/축소.
 NONVERBAL_STATES = (
     "engaged",
