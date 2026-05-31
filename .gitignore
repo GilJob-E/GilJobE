@@ -29,3 +29,8 @@ out/
 *.wav
 *.m4a
 *.webm
+
+# parked facial-detection 탐색 스크래치(메모 vision-nonverbal-instability — 우선순위 아님).
+# venv·모델 가중치라 무거움 → 실수 커밋 방지.
+/.dev/.venv-vision/
+/.dev/models/
