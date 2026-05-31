@@ -1,0 +1,94 @@
+{
+  "clip": "kor.mp4",
+  "stream_dur_s": 38.27,
+  "lanes": {
+    "nv": {
+      "latency_after_close": {
+        "n": 13,
+        "mean": 0.687,
+        "max": 0.808,
+        "p95": 0.781
+      },
+      "service": {
+        "n": 13,
+        "mean": 0.686,
+        "max": 0.808,
+        "p95": 0.78
+      },
+      "queue_wait": {
+        "n": 13,
+        "mean": 0.001,
+        "max": 0.003,
+        "p95": 0.003
+      },
+      "fails": 0
+    },
+    "stt": {
+      "latency_after_close": {
+        "n": 13,
+        "mean": 0.191,
+        "max": 0.252,
+        "p95": 0.247
+      },
+      "service": {
+        "n": 13,
+        "mean": 0.191,
+        "max": 0.252,
+        "p95": 0.247
+      },
+      "queue_wait": {
+        "n": 13,
+        "mean": 0.0,
+        "max": 0.0,
+        "p95": 0.0
+      },
+      "fails": 0
+    },
+    "eval": {
+      "latency_after_close": {
+        "n": 2,
+        "mean": 7.7,
+        "max": 7.917,
+        "p95": 7.917
+      },
+      "service": {
+        "n": 2,
+        "mean": 7.7,
+        "max": 7.916,
+        "p95": 7.916
+      },
+      "queue_wait": {
+        "n": 2,
+        "mean": 0.0,
+        "max": 0.0,
+        "p95": 0.0
+      },
+      "fails": 1
+    },
+    "tail": {
+      "latency_after_close": {
+        "n": 1,
+        "mean": 2.021,
+        "max": 2.021,
+        "p95": 2.021
+      },
+      "service": {
+        "n": 1,
+        "mean": 0.808,
+        "max": 0.808,
+        "p95": 0.808
+      },
+      "queue_wait": {
+        "n": 1,
+        "mean": 1.213,
+        "max": 1.213,
+        "p95": 1.213
+      },
+      "fails": 0
+    }
+  },
+  "real_time_tail_s": 2.021,
+  "total_wall_s": 40.291,
+  "nv_overrun_windows": [],
+  "stream_emit_wall_s": 38.27
+}
