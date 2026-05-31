@@ -144,6 +144,7 @@ class TurnWindower:
         self._out: list[Signal] = []
         self._futures: list[Future] = []
         self._stt_futures: list[Future] = []  # end_turn이 transcript_full 합본 전 기다릴 대상
+        self._nv_futures: list[Future] = []   # end_turn이 트레일링 윈도우 nv·전사 페어링 전 기다릴 대상
         self._closed = False
 
     # ── 입력 ──
@@ -178,14 +179,20 @@ class TurnWindower:
         return out
 
     # ── 추적/대기 ──
-    def _submit(self, executor, fn: Callable[..., object], *args, track_stt: bool = False) -> Future:
+    def _submit(
+        self, executor, fn: Callable[..., object], *args,
+        track_stt: bool = False, track_nv: bool = False,
+    ) -> Future:
         fut = executor.submit(fn, *args)
         with self._fut_lock:
             self._futures = [f for f in self._futures if not f.done()]
             self._futures.append(fut)
-            if track_stt:  # stt만 별도 추적 — end_turn이 transcript_full 합본 전 이것만 기다림
+            if track_stt:  # stt 별도 추적 — end_turn이 transcript_full 합본 전 이것만 기다림
                 self._stt_futures = [f for f in self._stt_futures if not f.done()]
                 self._stt_futures.append(fut)
+            if track_nv:  # nv 별도 추적 — end_turn이 트레일링 윈도우 nv를 TurnEnd 전에 기다려 페어링 보장
+                self._nv_futures = [f for f in self._nv_futures if not f.done()]
+                self._nv_futures.append(fut)
         return fut
 
     def wait_idle(self, timeout: float | None = None) -> None:
@@ -276,7 +283,7 @@ class TurnWindower:
         # nv·stt는 같은 윈도우 집합 — 한 윈도우에서 둘 다 제출(레코드별 nv·전사 페어링).
         for (start, dur, frames, pcm) in nv_jobs:
             if frames:  # 비디오 없는 구간은 비언어 read 스킵
-                self._submit(self._nv_exec, self._do_nv, start, dur, frames, pcm)
+                self._submit(self._nv_exec, self._do_nv, start, dur, frames, pcm, track_nv=True)
             if pcm:  # 오디오 없는 구간은 전사 스킵
                 self._submit(self._stt_exec, self._do_stt, start, dur, pcm, track_stt=True)
         for (start, dur, frames, pcm) in eval_jobs:
@@ -324,24 +331,35 @@ class TurnWindower:
                 tail_fut = self._submit(self._tail_exec, self._do_tail, start, dur, frames, pcm)
         for (start, dur, frames, pcm) in nv_jobs:
             if frames:
-                self._submit(self._nv_exec, self._do_nv, start, dur, frames, pcm)
+                self._submit(self._nv_exec, self._do_nv, start, dur, frames, pcm, track_nv=True)
             if pcm:
                 self._submit(self._stt_exec, self._do_stt, start, dur, pcm, track_stt=True)
-        # transcript_full(전사 합본)·compact eval을 종합하려면 stt와 tail을 기다린다.
-        # 발화중 풀 평가는 _stt_futures/tail_fut에 없으므로 자동으로 안 기다림(의도).
+        # transcript_full은 stt를, recorder의 nv·전사 페어링은 nv를, compact eval은 tail을 기다린다.
+        # nv를 기다려야 트레일링 윈도우의 NonVerbalSignal이 TurnEnd emit *전에* 도착해 소비자(Sink)가
+        # nv·전사를 한 레코드로 병합한다(안 기다리면 nv가 늦게 와 nonverbal=None 부분 레코드로 새고 nv 유실).
+        # 발화중 풀 평가는 어느 추적 리스트에도 없으므로 자동으로 안 기다림(의도 — compact tail이 재커버).
         with self._fut_lock:
-            pending = [f for f in self._stt_futures if not f.done()]
+            stt_pending = [f for f in self._stt_futures if not f.done()]
+            nv_pending = [f for f in self._nv_futures if not f.done()]
+        wait_set = stt_pending + nv_pending
         if tail_fut is not None:
-            pending.append(tail_fut)
-        if pending:
-            _, not_done = wait(pending, timeout=self.eot_deadline_s)
-            # stt가 데드라인 내 못 끝나면 transcript_full이 부분이 된다 — 조용히 버리지 말고 경고
-            # (gje "silent drop 방지" 원칙). 실측 stt 0.19s vs 기본 3.0s라 정상에선 안 걸린다.
-            stalled_stt = [f for f in not_done if f is not tail_fut]
+            wait_set.append(tail_fut)
+        if wait_set:
+            _, not_done = wait(wait_set, timeout=self.eot_deadline_s)
+            # 데드라인 내 미완은 조용히 버리지 말고 경고(gje "silent drop 방지"). 실측 nv 0.69s·stt 0.19s
+            # vs 기본 3.0s라 정상에선 안 걸린다. stt 미완 → transcript_full 부분 / nv 미완 → 페어링 분할.
+            stt_set, nv_set = set(stt_pending), set(nv_pending)
+            stalled_stt = [f for f in not_done if f in stt_set]
+            stalled_nv = [f for f in not_done if f in nv_set]
             if stalled_stt:
                 logger.warning(
                     "end_turn: stt %d개가 eot_deadline(%.1fs) 내 미완 — transcript_full 부분일 수 있음",
                     len(stalled_stt), self.eot_deadline_s,
+                )
+            if stalled_nv:
+                logger.warning(
+                    "end_turn: nv %d개가 eot_deadline(%.1fs) 내 미완 — 트레일링 윈도우 nv·전사 페어링 분할 가능",
+                    len(stalled_nv), self.eot_deadline_s,
                 )
         # transcript_full 합본: 윈도우 전사를 t-정렬(start 순)로 join, 빈 조각 제외(미완 stt는 누락 = best-effort).
         # 3s 그리드는 어절 중간 절단 가능(공백 join) — 면접관 LLM 입력 보정용, 완벽 정렬 아님.
@@ -375,6 +393,7 @@ class TurnWindower:
         with self._fut_lock:
             self._futures = []
             self._stt_futures = []
+            self._nv_futures = []
         with self._out_lock:
             self._out = []
             self._closed = False
