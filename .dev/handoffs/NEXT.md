@@ -24,6 +24,7 @@
 3. 검증: `test_windowing`(mock + 실 스레드풀) — cadence(3s/16s)·eot tail·실패윈도우 tail 복구·**중복 없음**·**레인독립(`SlowMockCritic`)**·stt 레인 1윈도우 1전사. *GPU/브라우저 불요.*
 4. 이 슬라이스 산출물 재사용: `MockCritic`(배선)·`SlowMockCritic`(레인독립)·`MockTranscriber`. import: cross=absolute(`from giljobe.analysis…`).
 5. 리스크(PLAN §리스크): **이벤트루프 블로킹**(critic/STT를 ingest 코루틴서 직접 호출 금지, 반드시 executor 경유), 완료순 emit(소비자가 `t`로 정렬).
+6. ★ Slice 3 실측 근거(레인 설계 정당화 — 4090 1장, kor.mp4 38s 3레인 시뮬): 핫패스(nv 0.69s / stt 0.19s)는 **3s cadence 대비 4배 여유로 안 밀림**. 풀 eval은 **7.7s 롱폴**(핫패스의 ~10배)이고 **~33% JSON 절단** → eval 레인 워커는 예외 흡수 필수, eot은 풀 eval 말고 **compact tail**. 그리고 **`tail_exec`를 `eval_exec`와 반드시 분리**(공유 시 compact tail이 진행중 7.7s eval 뒤 1.2s 큐잉됨 — 실측). 원자료 `.dev/latency_sim.json`.
 
 ## 불변 규칙 (매 슬라이스 공통)
 - src = 계층형 subpackage. import: **intra=relative / cross=absolute** (PLAN.md §1, 메모 `[[layered-src-structure]]`).
