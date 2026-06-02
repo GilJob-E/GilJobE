@@ -36,3 +36,7 @@ out/
 /.dev/.venv-vision/
 /.dev/vision/models/
 /.dev/vision/frames/
+
+# 오디오 프로소디 탐색(.dev/audio/ — 진입점 README.md). 추출 PCM = kor.mp4 파생(클립과 같은 비커밋 정책).
+# 스크립트(.py)·결과(.json)·문서(.md)는 커밋한다.
+/.dev/audio/*.pcm

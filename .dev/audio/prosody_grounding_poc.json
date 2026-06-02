@@ -1,0 +1,202 @@
+{
+  "clip": "kor.mp4 → kor_16k_mono.pcm",
+  "total_duration_s": 38.27,
+  "transcript_global": {
+    "hangul_syllables": 233,
+    "speech_rate_syl_per_s_over_full_clip": 6.09,
+    "note": "전사 한글 음절수 / 전체길이 — 음절핵 검출기 sanity check용 참조값"
+  },
+  "windows": [
+    {
+      "window": "0-16s",
+      "ss": 0,
+      "dur": 16,
+      "gemma_vocal": {
+        "volume": "적절한 볼륨을 유지하고 있으나, 감정 표현이 다소 평이하여 몰입감을 떨어뜨린다.",
+        "pace": "전반적으로 일정한 속도를 유지하고 있으나, 중요한 내용을 강조할 때 속도 조절이 미흡하다.",
+        "pauses": "자연스러운 호흡을 위한 쉼표는 있으나, 내용 전환 시의 멈춤이 다소 부자연스럽다.",
+        "intonation": "전반적으로 단조로운 톤으로, 내용에 대한 열정이나 진정성이 잘 전달되지 않는다."
+      },
+      "pitch_intonation": {
+        "voiced_frames": 2325,
+        "voiced_ratio": 0.744,
+        "f0_floor_ceiling": [
+          146.6,
+          418.0
+        ],
+        "mean_hz": 236.8,
+        "median_hz": 221.5,
+        "sd_hz": 62.2,
+        "pdq": 0.2628,
+        "sd_semitone": 4.29,
+        "range_st_10_90": 12.02,
+        "declination_st_per_s": 0.174,
+        "detrended_sd_semitone": 4.21,
+        "octave_error_frac": 0.0
+      },
+      "rate": {
+        "syllable_nuclei": 92,
+        "duration_s": 16.0,
+        "phonation_s": 14.19,
+        "speech_rate_syl_per_s": 5.75,
+        "articulation_rate_syl_per_s": 6.48
+      },
+      "pauses": {
+        "pause_count_ge_0p25": 0,
+        "short_juncture_count_0p1_0p25": 15,
+        "juncture_median_s": 0.112,
+        "longest_pauses_s": [
+          0.17,
+          0.14,
+          0.14,
+          0.14,
+          0.13
+        ]
+      },
+      "energy": {
+        "rel_db_slope_per_s": -0.195,
+        "first_half_median_db": -10.39,
+        "second_half_median_db": -11.66,
+        "half_to_half_delta_db": -1.27,
+        "sounding_trough_db": -16.53,
+        "sounding_trough_at_s": 9.84
+      },
+      "cpu_latency_ms": 350.0
+    },
+    {
+      "window": "16-32s",
+      "ss": 16,
+      "dur": 16,
+      "gemma_vocal": {
+        "volume": "전반적으로 적절하나, 특정 구간에서 볼륨이 미세하게 작아지는 경향이 있습니다.",
+        "pace": "전반적으로 빠르지만, 중요한 내용을 전달할 때 속도를 조절하는 노력이 필요합니다.",
+        "pauses": "문장과 문장 사이의 호흡이 다소 짧아, 내용 전달에 집중하는 느낌을 줍니다.",
+        "intonation": "단조로운 톤으로 인해 내용에 대한 열정이나 자신감이 충분히 전달되지 않습니다."
+      },
+      "pitch_intonation": {
+        "voiced_frames": 1962,
+        "voiced_ratio": 0.659,
+        "f0_floor_ceiling": [
+          139.8,
+          466.7
+        ],
+        "mean_hz": 248.6,
+        "median_hz": 231.7,
+        "sd_hz": 73.7,
+        "pdq": 0.2964,
+        "sd_semitone": 4.89,
+        "range_st_10_90": 13.21,
+        "declination_st_per_s": 0.016,
+        "detrended_sd_semitone": 4.89,
+        "octave_error_frac": 0.002
+      },
+      "rate": {
+        "syllable_nuclei": 92,
+        "duration_s": 16.0,
+        "phonation_s": 15.12,
+        "speech_rate_syl_per_s": 5.75,
+        "articulation_rate_syl_per_s": 6.08
+      },
+      "pauses": {
+        "pause_count_ge_0p25": 0,
+        "short_juncture_count_0p1_0p25": 7,
+        "juncture_median_s": 0.128,
+        "longest_pauses_s": [
+          0.14,
+          0.14,
+          0.14,
+          0.13,
+          0.11
+        ]
+      },
+      "energy": {
+        "rel_db_slope_per_s": 0.006,
+        "first_half_median_db": -9.91,
+        "second_half_median_db": -9.55,
+        "half_to_half_delta_db": 0.36,
+        "sounding_trough_db": -16.02,
+        "sounding_trough_at_s": 31.7
+      },
+      "cpu_latency_ms": 21.6
+    },
+    {
+      "window": "21-37s",
+      "ss": 21,
+      "dur": 16,
+      "gemma_vocal": {
+        "volume": "적절한 볼륨을 유지하고 있으나, 일부 구간에서 힘이 빠지는 듯한 느낌을 줍니다.",
+        "pace": "전반적으로 일정한 속도를 유지하려 노력했으나, 내용 전달에 집중하느라 다소 기계적인 느낌을 줍니다.",
+        "pauses": "문장과 문장 사이의 호흡이 다소 짧아, 내용이 급하게 전달되는 인상을 줍니다.",
+        "intonation": "전반적으로 단조로운 톤을 유지하고 있어, 내용에 대한 열정이나 자신감이 충분히 전달되지 않습니다."
+      },
+      "pitch_intonation": {
+        "voiced_frames": 1754,
+        "voiced_ratio": 0.616,
+        "f0_floor_ceiling": [
+          133.6,
+          473.0
+        ],
+        "mean_hz": 250.2,
+        "median_hz": 225.1,
+        "sd_hz": 78.7,
+        "pdq": 0.3148,
+        "sd_semitone": 5.13,
+        "range_st_10_90": 13.79,
+        "declination_st_per_s": -0.033,
+        "detrended_sd_semitone": 5.13,
+        "octave_error_frac": 0.023
+      },
+      "rate": {
+        "syllable_nuclei": 89,
+        "duration_s": 16.0,
+        "phonation_s": 14.65,
+        "speech_rate_syl_per_s": 5.56,
+        "articulation_rate_syl_per_s": 6.08
+      },
+      "pauses": {
+        "pause_count_ge_0p25": 0,
+        "short_juncture_count_0p1_0p25": 10,
+        "juncture_median_s": 0.136,
+        "longest_pauses_s": [
+          0.21,
+          0.16,
+          0.14,
+          0.14,
+          0.14
+        ]
+      },
+      "energy": {
+        "rel_db_slope_per_s": 0.005,
+        "first_half_median_db": -11.04,
+        "second_half_median_db": -10.6,
+        "half_to_half_delta_db": 0.45,
+        "sounding_trough_db": -16.15,
+        "sounding_trough_at_s": 36.77
+      },
+      "cpu_latency_ms": 30.5
+    }
+  ],
+  "silero_vad_crosscheck": [
+    {
+      "window": "0-16s",
+      "speech_segments": 1,
+      "speech_ratio": 1.0,
+      "inter_speech_gaps_s": [],
+      "gap_median_s": null
+    },
+    {
+      "window": "16-32s",
+      "speech_segments": 1,
+      "speech_ratio": 1.0,
+      "inter_speech_gaps_s": [],
+      "gap_median_s": null
+    },
+    {
+      "window": "21-37s",
+      "speech_segments": 1,
+      "speech_ratio": 0.956,
+      "inter_speech_gaps_s": [],
+      "gap_median_s": null
+    }
+  ]
+}
