@@ -88,16 +88,46 @@ curl -sSLO https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_
 - `.dev/.venv-vision/` 생성 (Python 3.11 + py-feat 0.6.2 + torch 2.2.2 cu121). gitignore 됨.
 - `.gitignore`: `/.dev/models/` → `/.dev/vision/models/` 경로 갱신, `/.dev/vision/frames/` 추가.
 
+## ★ 설계 제안: "inject AND emit" (2026-06-02 사용자·클로드 합의)
+
+**핵심 아이디어(사용자 제안):** 3초 비전 윈도우에서 젬마에게 **1fps 프레임 3장 + MediaPipe 윈도우 집계
+수치를 함께** 넘겨, 이미지와 수치를 같이 보고 윈도우 추론을 시킨다.
+
+**왜 옳은가:**
+- 분업이 정확함 — 측정(레인) vs 해석(젬마). 젬마의 실패는 "측정 못 하는데 측정한 척"에서 왔음.
+- 시간적 실명 보완 — 깜빡임 횟수·미소 min/max/지속%·움직임 분산은 1fps 프레임이 못 담는 정보.
+- 충돌 7건을 생성 시점에서 공격 — `wrist_visible=0.02`가 프롬프트에 있으면 "제스처 활용 못함" 평가가 나오기 어려움.
+- 보너스: **세션 baseline 대비 delta**도 주입 가능 → stateless 한계(메모)까지 해결.
+
+**필수 조건 2개 (이거 없으면 하지 말 것):**
+1. **inject AND emit** — 수치를 젬마 안으로만 넣으면 검증 가능성이 사라짐(젬마가 수치를 무시해도 알 길 없음).
+   수치는 record에 **raw로도 보존**: 젬마 read = 수치 보고 생성된 것 / raw 수치 = 여전히 ground truth.
+   젬마가 주입된 수치와 모순되면 → 그 자체를 모델 실패 신호로 플래깅.
+2. **프롬프트 차단 규칙** — "수치에 근거 없는 관찰 기술 금지 / 수치와 모순되는 묘사 금지" 명시.
+   수치는 raw 블렌드셰이프가 아니라 **집계 + 한국어 라벨**("미소: 강함, 프레임 72%") 형태로.
+   단 "긴장" 같은 해석 라벨은 미리 붙이지 않는다.
+
+**열린 질문 → 착수 시 첫 스파이크:** "수치를 줘도 젬마가 따르는가?"
+- **Acceptance test가 이미 준비돼 있음**: kor.mp4 + `conflict-analysis.md`의 충돌 7건.
+  수치 주입 버전으로 재추론 → 충돌이 몇 건 사라지는지 센다.
+- 사라짐 → 설계 검증 완료. 안 사라짐(수치 무시) → 더 과격한 대안 검토:
+  **per-window 시각 read에서 젬마 제외**, 수치만 emit (젬마는 verbal/심층 eval 전담).
+- 같은 스파이크에서 확인: 젬마 read가 수치의 한국어 번역에 불과한가, 수치 위에 뭔가를 더하는가?
+  전자면 nv 채널은 수치+템플릿이 더 싸고 안정적.
+
+**자잘한 리스크 (해결책 있음):** 토큰 비용 수백 토큰(무시 가능) · 타이밍은 MediaPipe 17ms/frame이라
+윈도우 닫히면 즉시 집계 가능 · 수치 자체가 틀리는 경우는 `face_detect_rate` 동반 주입으로 게이팅.
+
 ## 다음 단계 (작업 지속 시)
 
-1. **PLAN.md에 슬라이스로 편입** (착수 조건은 메인 트랙과 조율 — NEXT.md 갱신은 메인 트랙 소유):
+1. **↑ 수치 주입 스파이크 먼저** (위 acceptance test — GPU/vLLM 필요, 충돌 7건 재측정).
+2. **PLAN.md에 슬라이스로 편입** (착수 조건은 메인 트랙과 조율 — NEXT.md 갱신은 메인 트랙 소유):
    - `analysis/grounding.py`(가칭): MediaPipe Face+Pose 래퍼. **30fps dense 레인을 3s 그리드에서 분리**
      (Slice 4에서 stt 레인을 분리한 것과 동형 패턴). face·pose 각자 스레드(executor).
-   - 윈도우별 집계 → `objective_nonverbal` 필드로 emit (Slice 5 `WindowRecord`에 병합).
-   - **융합 규칙**: 젬마 read와 일치/불일치 + confidence 플래그. 객관 수치가 젬마를 **덮어쓰지 않고** 병기
-     (다운스트림 면접관 LLM이 가중치 판단). 관측 불가(`wrist_visible≈0`)는 해당 평가 차단 신호로.
-2. **단일 클립 한계 보강**: 다른 조명/즉흥발화/실 WebRTC 압축 경로 클립으로 재검증. 손 보이는 클립으로 제스처 정량화 실검증.
-3. **통합 타겟 고려**: 최종 배치는 giljob-docker `services/analysis-engine` (LiveKit subscribe 입력) — 메모
+   - 윈도우별 집계 → ① 젬마 nv 프롬프트에 주입(inject) + ② `objective_nonverbal` 필드로 emit.
+   - 관측 불가(`wrist_visible≈0`)는 해당 평가 차단 신호로.
+3. **단일 클립 한계 보강**: 다른 조명/즉흥발화/실 WebRTC 압축 경로 클립으로 재검증. 손 보이는 클립으로 제스처 정량화 실검증.
+4. **통합 타겟 고려**: 최종 배치는 giljob-docker `services/analysis-engine` (LiveKit subscribe 입력) — 메모
    `giljob-docker-integration-target` 참조. MediaPipe는 CPU-only라 컨테이너 추가 부담 적음(alpine 호환은 확인 필요).
 
 ## 관련 문서 / 메모
