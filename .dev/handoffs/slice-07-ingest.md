@@ -60,6 +60,12 @@ pyproject.toml                     (수정)  deps에 aiortc~=1.14·av·numpy·Pi
 - PyAV API 실측 검증(av 16.1.0): AudioResampler ctor·resample()=list·작은입력=빈list·flush 꼬리·
   reformat/to_image·frame.time(pts*time_base)·MediaStreamError 계층 — 전부 실제 호출로 확인(추측 0).
 - vLLM/GPU 불요 → 라이브 게이트 없음, 오프라인 통과가 완료 기준(PLAN §6 ingest 항목 충족).
+- ★ **레이턴시 evidence**(`.venv` perf 실측): `encode_jpeg` 1280×720 yuv420p≈**1.65ms**·640×480≈1.5ms·
+  1080p≈2.1ms·rgb24 1280×720≈3.0ms(1회/초 호출). `PcmResampler.resample` 20ms@48k stereo→16k mono≈
+  **0.013ms**(~50회/초 → 누적 ≈0.7ms/초). → ingest가 이벤트루프를 잡는 시간 ≈**2.4ms/초(0.24%)**,
+  단일 최장 블록도 ~1.65ms(JPEG) = WebRTC 수신에 무영향. **설계 가정("변환은 ms급이라 코루틴 직접,
+  느린 추론만 executor")을 숫자로 확정.** 종단(영상→signal emit) 레이턴시는 실 모델 의존이라 **Slice 9
+  라이브 e2e에서 측정**(의도적 미측정).
 
 ## ★ 다음 슬라이스로 넘기는 note(설계 결정 — 버그 아님, Slice 8/server가 처리)
 - **poll-clock 계약(중요)**: ingest는 프레임을 **미디어 상대초**(첫 프레임=t=0)로 태깅한다. 서버(Slice 8)가
@@ -80,12 +86,19 @@ glue(`consume_video/consume_audio`의 `track.recv()`+`MediaStreamError`)만 **Li
 requirements.txt·/healthz·AGENTS+CLAUDE 쌍)은 메모리 참조. **Slice 8 server 설계 시 aiortc-직접 vs
 LiveKit-subscribe를 의식**할 것(데모는 aiortc로 진행해도, 통합 어댑터를 염두).
 
-## 다음 슬라이스 = Slice 8: server + 브라우저 — PLAN §7-8
-- `server/app.py`: aiohttp — `POST /offer`(SDP 협상), `GET /signals`(SSE, emit/sink 연결), `/turn/start|end`,
-  정적 `web/`. **poll 타이머** 소유(위 poll-clock 계약). ingest `consume_video/consume_audio`를 트랙별 태스크로 띄움.
-- `web/index.html`: getUserMedia → RTCPeerConnection → POST /offer, `/signals` EventSource tail(데모 가시화).
-- 새 dep: **aiohttp**(server 몫, 아직 미설치 — pyproject 주석대로). 검증: `http://localhost`(secure context) 수동 스모크.
-- (그 다음 Slice 9 = 라이브 e2e: vid_0001/0033 + 실 critic, evidence JSON.)
+## 다음 슬라이스 = Slice 8: **LiveKit 구독자 입력 어댑터** (PLAN §7-8 **피벗** — 2026-06-02 사용자 결정)
+★ **피벗**: 통합 타깃 프론트(`giljob-docker/apps/web`)가 **LiveKit publish 완성 + 브라우저 STT를 우리한테
+위임**(최신 커밋 "Route transcription through GilJobE analysis engine")임을 조사로 확인 → PLAN §7-8의
+**aiortc `POST /offer` + 자체 `web/index.html`은 실제 타깃에서 안 쓰여 throwaway** → 그 데모 대신
+**진짜(LiveKit 구독자)**를 만든다. 상세 진입점은 **`NEXT.md`의 "다음 할 일=Slice 8" 섹션**(정본 갱신).
+- LiveKit `rtc.Room()` → `connect(url, token)`로 `giljob-session-{id}` join(subscribe-only) → candidate
+  audio+video track 구독. 토큰 발급 경로(services/api 추가 여부) 확인 필요.
+- **ingest 순수 변환(`encode_jpeg`/`PcmResampler`/`_concat_pcm`)은 그대로 재사용** — 트랙 소비 glue만 LiveKit
+  `VideoStream/AudioStream`로 신규(이번 슬라이스가 그 seam으로 분리해 둔 이유). windowing/emit/recorder 재사용.
+- poll-clock 계약 유지(LiveKit 프레임 timestamp → 미디어 상대초, 첫 프레임=0).
+- 새 dep: **`livekit`(Python RTC SDK)**. 검증: 로컬 LiveKit(그쪽 compose media 오버레이) 또는 SDK fake.
+- (LiveKit Python SDK 실API 조사 결과를 NEXT.md Slice 8 섹션에 추가 중 — 그걸 시작점으로.)
+- (그 다음 Slice 9 = 라이브 e2e + 실 critic, evidence JSON — 종단 레이턴시·전사 품질 측정.)
 
 ## git
 이 슬라이스 커밋(메모 `[[commit-habit]]`). 제안:

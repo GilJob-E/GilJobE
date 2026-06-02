@@ -34,20 +34,44 @@
   - deps 추가·설치: `aiortc~=1.14`·`av`·`numpy`·`Pillow`(pyproject). aiohttp는 Slice 8 몫.
   - 인라인 적대적 리뷰(워크플로 정체로 직접 수행): **정정 버그 0**, 실제 커버리지 갭 3건 보강(mono 입력·yuv420p 웹캠 포맷·취소 전파).
   - **오프라인 73 passed**(기존 61 무회귀 + ingest 12), 플레이크 0/30. *GPU/브라우저 불요.*
+  - ★ **레이턴시 evidence**(`.venv` 실측): encode_jpeg 1280×720≈**1.65ms**(1회/초)·1080p 2.1ms, resample 20ms조각≈**0.013ms**(~50회/초) → ingest가 이벤트루프 잡는 시간 ≈**2.4ms/초(0.24%)** = 무시 가능. "변환은 ms급, 추론만 executor로" 설계 가정 숫자로 확인. **종단(영상→emit) 레이턴시는 실 모델 필요 → Slice 9 라이브 e2e에서 측정**(미측정 의도적).
 
 ## ★★ 통합 타깃 (모든 다음 슬라이스가 인지 — 메모리 `giljob-docker-integration-target`)
 이 레포는 최종적으로 **`github.com/GilJob-E/giljob-docker`의 `services/analysis-engine/`**로 통합된다.
-입력 모델이 PLAN과 다름: aiortc 직접 수신이 아니라 **LiveKit room subscribe**. → ingest 순수 변환·windowing
-코어는 재사용, 트랙 소비 glue만 LiveKit SDK로 교체(그 seam으로 분리해 둠). 출력 소비자=`services/ai-engine`
-(Gemini, HTTP+JSON, internal). 컨테이너 규약(alpine→네이티브 시 slim 협의·requirements.txt·/healthz·
-AGENTS+CLAUDE 쌍)은 메모리 참조. **Slice 8 server 설계 시 의식**(데모는 aiortc로 진행하되 통합 어댑터 염두).
+입력 모델이 PLAN과 다름: aiortc 직접 수신이 아니라 **LiveKit room subscribe**. **그쪽 프론트(`apps/web`)는
+이미 LiveKit으로 publish 완성**(룸 `giljob-session-{id}`, 토큰 `POST /api/sessions`)이고, **브라우저 STT를
+의도적으로 제거해 전사를 우리한테 위임**(최신 커밋 "Route transcription through GilJobE analysis engine").
+→ 우리는 같은 룸에 **subscriber로 join → candidate track 구독 → 파이프라인 → transcript+signal emit**.
+출력 소비자=`services/ai-engine`(Gemini, HTTP+JSON, internal). 컨테이너 규약(alpine→네이티브 시 slim
+협의·requirements.txt·/healthz·AGENTS+CLAUDE 쌍)은 메모리 참조.
 
-## 다음 할 일 = Slice 8: server + 브라우저 — PLAN §7-8
-1. 먼저 `PLAN.md §7-8`(+ §아키텍처 데이터흐름, §5 턴 경계, §6 수동 스모크) + `.dev/handoffs/slice-07-ingest.md`(다음 슬라이스 섹션 + ★ poll-clock 계약) 정독.
-2. **`src/giljobe/server/app.py`**: aiohttp — `POST /offer`(SDP 협상), `GET /signals`(SSE, emit/sink), `/turn/start|end`, 정적 `web/`. **poll 타이머** 소유(★ ingest는 **미디어 상대초**로 프레임 태깅 → poll(now)를 같은 타임라인으로 몰 것). ingest `consume_video/consume_audio`를 트랙별 태스크로 기동. 단일 세션 가정(앱-레벨 공유 executor·단일 윈도워·단일 /signals).
-3. **`web/index.html`**: getUserMedia → RTCPeerConnection → POST /offer, `/signals` EventSource tail(데모 가시화).
-4. ★ 새 dep: **aiohttp** 추가·설치(server 몫, pyproject 주석대로). 검증: `http://localhost:PORT`(localhost=secure context) 수동 브라우저 스모크 — 협상→프레임/오디오 도착→`/signals`에 레코드 표출. 종료 후 `docker stop`+`nvidia-smi`로 VRAM 위생(라이브 critic 붙일 때).
-5. 리스크: **poll-clock 정합**(위, ingest note) · **getUserMedia secure context**(localhost/HTTPS) · **이벤트루프 블로킹**(critic/STT는 윈도워 executor 경유) · **통합 시 LiveKit 입력 모델**(위 ★★). (그 다음 Slice 9=라이브 e2e.)
+## 다음 할 일 = Slice 8: **LiveKit 구독자 입력 어댑터** (PLAN §7-8 **피벗** — 2026-06-02 사용자 결정)
+> ★ **피벗 사유**: 통합 타깃 프론트가 LiveKit publish 완성 + 브라우저 STT 우리한테 위임 확인 →
+> 실제 통합은 LiveKit 구독. PLAN §7-8의 **aiortc `POST /offer` + 자체 `web/index.html`은 타깃에서
+> 안 쓰여 throwaway** → 그 데모 대신 **진짜(LiveKit 구독자)**를 만든다. (aiortc 기반 `consume_video/
+> consume_audio`(Slice 7)는 유효한 채 남겨두되 핫패스는 LiveKit 버전으로.) **PLAN.md §7-8/§아키텍처는
+> 이 피벗으로 일부 superseded** — 본 NEXT.md가 우선(정본 갱신은 LiveKit 연구 결과 반영 후).
+
+1. 먼저 **`.dev/livekit-sdk-research.md`**(★ 실API 검증·의사코드·체크리스트 — Slice 8 시작점) + 이 섹션 +
+   `.dev/handoffs/slice-07-ingest.md`(★ poll-clock 계약) + 메모리 `giljob-docker-integration-target` 정독.
+2. **LiveKit 구독자**: `rtc.Room()` → `connect(url, token, RoomOptions(auto_subscribe=True))`로 `giljob-session-{id}`
+   join(**hidden 구독자** — token grant `can_subscribe=True/can_publish=False/hidden=True`). candidate audio+video
+   track 구독(★ 늦게 join 시 `track_subscribed` 안 오니 `room.remote_participants` 순회로 기존 track도 시작).
+   토큰: services/api 발급(권장) vs 우리 직접 발급(`livekit-api`) — **api 팀 합의 1건**(연구 노트 §2).
+3. **ingest 재사용 + glue 교체**: `encode_jpeg` RGB→640×480→JPEG **코어 재사용**(입력만 `rtc.VideoFrame`(RGB24)→
+   ndarray로 어댑트). 트랙 glue→`consume_*_lk(stream, windower)`(`async for ev in rtc.Video/AudioStream`).
+   ★ **audio는 `AudioStream(track, sample_rate=16000, num_channels=1)`로 받으면 16k mono 직접 공급 →
+   `PcmResampler`/`_concat_pcm`/`flush` 불필요**(resample-list gotcha는 aiortc 경로 한정). ts: video=
+   `ev.timestamp_us/1e6`, audio=**누적 `frame.duration`**(첫프레임 t0 정규화·poll-clock 유지). 종료=EOS(`async for`
+   자연종료, `MediaStreamError` 삭제), `CancelledError` 전파. windowing/emit/recorder/sink **전부 무변경**.
+   레이어링: 룸 lifecycle은 media 아닌 **신규 `server/`**에, media는 `consume_*_lk` glue까지(leaf 유지).
+   **기존 aiortc `consume_video/consume_audio`는 삭제하지 말고 유지**(핫패스만 LiveKit).
+4. ★ 새 dep: **`livekit~=1.1`**(RTC, 1.1.9대; 직접 발급 시 `livekit-api~=1.1`도). **manylinux wheel→컨테이너
+   glibc(slim) 확정**(alpine 불가). 검증: async-iterable 더블로 `consume_*_lk` 단위테스트(`test_ingest_lk.py` —
+   ts·1fps·duration누적·PCM bytes) + 실 LiveKit은 그쪽 `infra/docker-compose.media.yml`+publisher 스크립트, down이면 skip.
+5. 리스크: **로컬 LiveKit 서버 필요**(SDK fake 없음→더블 주입) · **poll-clock 정합** · **이벤트루프 블로킹**
+   (critic/STT는 executor; `room.on` 콜백 안 await 금지→`ensure_future`) · **토큰/권한**(hidden·canSubscribe).
+   (그 다음 Slice 9=라이브 e2e + 실 critic — 종단 레이턴시·전사 품질 evidence.)
 
 ## 불변 규칙 (매 슬라이스 공통)
 - src = 계층형 subpackage. import: **intra=relative / cross=absolute** (PLAN.md §1, 메모 `[[layered-src-structure]]`).
