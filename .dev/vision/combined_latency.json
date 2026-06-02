@@ -1,0 +1,27 @@
+{
+  "clip": "kor.mp4",
+  "n_frames": 300,
+  "results": [
+    {
+      "label": "A) face+pose 순차(1스레드)",
+      "avg_ms": 30.51,
+      "p95_ms": 43.85,
+      "fps": 32.8,
+      "margin_x_vs_30fps": 1.09
+    },
+    {
+      "label": "B) face+pose 병렬(2스레드)",
+      "avg_ms": 17.37,
+      "p95_ms": 24.83,
+      "fps": 57.6,
+      "margin_x_vs_30fps": 1.92
+    },
+    {
+      "label": "C) face+pose+hand 순차(1스레드)",
+      "avg_ms": 38.44,
+      "p95_ms": 55.29,
+      "fps": 26.0,
+      "margin_x_vs_30fps": 0.87
+    }
+  ]
+}

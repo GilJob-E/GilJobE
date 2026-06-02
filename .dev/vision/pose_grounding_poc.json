@@ -1,0 +1,179 @@
+{
+  "clip": "kor.mp4",
+  "fps": 30.0,
+  "total_frames": 1146,
+  "pose_detect_rate": 0.999,
+  "shoulder_visible_rate": 1.0,
+  "wrist_visible_rate": 0.015,
+  "hand_detect_rate": 0.038,
+  "realtime": {
+    "avg_infer_ms": 26.38,
+    "throughput_fps": 37.9,
+    "realtime_margin_x": 1.3
+  },
+  "gemma_eval_visual": {
+    "0": {
+      "eye_contact": "카메라를 응시하려는 노력이 보이나, 시선이 미세하게 흔들리거나 초점이 흐트러지는 부분이 있다.",
+      "posture": "정면을 향한 자세는 안정적이나, 어깨나 상체의 긴장이 느껴져 다소 경직되어 보인다.",
+      "expression": "미소는 유지하고 있으나, 표정 변화가 적어 감정 전달력이 약하다.",
+      "gesture_over_time": "손동작이 거의 없어 정적인 느낌을 준다. 필요한 순간에 제스처를 활용하지 못하고 있다."
+    },
+    "16": {
+      "eye_contact": "카메라를 응시하려는 노력이 보이나, 시선이 미세하게 흔들리는 부분이 있습니다.",
+      "posture": "정면을 향한 자세는 안정적이나, 어깨가 다소 경직되어 보입니다.",
+      "expression": "전반적으로 무표정에 가깝고, 내용에 대한 몰입도가 부족해 보입니다.",
+      "gesture_over_time": "손동작이 거의 없어, 내용 전달에 시각적인 보조 장치가 부족합니다."
+    },
+    "21": {
+      "eye_contact": "카메라를 응시하려는 노력이 보이나, 시선 처리가 다소 불안정하고 초점이 흐트러지는 부분이 있습니다.",
+      "posture": "정면을 향한 자세는 안정적이나, 어깨와 상체의 긴장이 느껴져 다소 경직되어 보입니다.",
+      "expression": "전반적으로 무표정에 가깝고, 미소나 표정 변화가 적어 딱딱한 인상을 줍니다.",
+      "gesture_over_time": "손동작이나 제스처가 거의 없어, 내용 전달에 시각적인 보조 장치가 부족합니다."
+    }
+  },
+  "windows": [
+    {
+      "ss": 0,
+      "frames": 90,
+      "wrist_visible": 0.0,
+      "hands_detected": 0.0,
+      "posture_std": 0.0248,
+      "head_sway": 0.0172,
+      "wrist_motion": 0.0,
+      "gesture_events": 0,
+      "gemma_nv": "미소 유지, 시선 안정적, 자세 비교적 곧음"
+    },
+    {
+      "ss": 3,
+      "frames": 90,
+      "wrist_visible": 0.0,
+      "hands_detected": 0.0,
+      "posture_std": 0.0265,
+      "head_sway": 0.0185,
+      "wrist_motion": 0.0,
+      "gesture_events": 0,
+      "gemma_nv": "시선은 정면을 응시하나, 표정 변화가 거의 없고 미묘하게 경직된 느낌"
+    },
+    {
+      "ss": 6,
+      "frames": 90,
+      "wrist_visible": 0.0,
+      "hands_detected": 0.0,
+      "posture_std": 0.0238,
+      "head_sway": 0.0121,
+      "wrist_motion": 0.0,
+      "gesture_events": 0,
+      "gemma_nv": "시선은 정면을 응시하고 있으나, 미세한 입술 떨림과 약간의 긴장감이 관찰됨"
+    },
+    {
+      "ss": 9,
+      "frames": 90,
+      "wrist_visible": 0.0,
+      "hands_detected": 0.0,
+      "posture_std": 0.0203,
+      "head_sway": 0.0178,
+      "wrist_motion": 0.0,
+      "gesture_events": 0,
+      "gemma_nv": "시선은 안정적이나, 미세한 입술 떨림과 약간의 긴장감이 관찰됨"
+    },
+    {
+      "ss": 12,
+      "frames": 90,
+      "wrist_visible": 0.0,
+      "hands_detected": 0.0,
+      "posture_std": 0.0378,
+      "head_sway": 0.0192,
+      "wrist_motion": 0.0,
+      "gesture_events": 0,
+      "gemma_nv": "미소와 함께 눈빛이 밝고, 자세가 안정적임"
+    },
+    {
+      "ss": 15,
+      "frames": 90,
+      "wrist_visible": 0.0,
+      "hands_detected": 0.0,
+      "posture_std": 0.015,
+      "head_sway": 0.0108,
+      "wrist_motion": 0.0,
+      "gesture_events": 0,
+      "gemma_nv": "시선이 약간 불안정하고, 미세한 입술 떨림이 관찰됨"
+    },
+    {
+      "ss": 18,
+      "frames": 90,
+      "wrist_visible": 0.0,
+      "hands_detected": 0.0,
+      "posture_std": 0.0364,
+      "head_sway": 0.0145,
+      "wrist_motion": 0.0,
+      "gesture_events": 0,
+      "gemma_nv": "시선은 정면을 응시하고 있으나, 미세한 입술 떨림과 약간의 긴장감이 관찰됨"
+    },
+    {
+      "ss": 21,
+      "frames": 90,
+      "wrist_visible": 0.0,
+      "hands_detected": 0.0,
+      "posture_std": 0.0306,
+      "head_sway": 0.0165,
+      "wrist_motion": 0.0,
+      "gesture_events": 0,
+      "gemma_nv": "눈을 감았다 뜨는 동작에서 잠시 집중하는 듯한 모습 포착"
+    },
+    {
+      "ss": 24,
+      "frames": 90,
+      "wrist_visible": 0.0,
+      "hands_detected": 0.0,
+      "posture_std": 0.0185,
+      "head_sway": 0.0111,
+      "wrist_motion": 0.0,
+      "gesture_events": 0,
+      "gemma_nv": "시선은 정면을 응시하고 있으나, 미세한 입술 떨림과 약간의 긴장감이 관찰됨"
+    },
+    {
+      "ss": 27,
+      "frames": 90,
+      "wrist_visible": 0.0,
+      "hands_detected": 0.0,
+      "posture_std": 0.0107,
+      "head_sway": 0.0113,
+      "wrist_motion": 0.0,
+      "gesture_events": 0,
+      "gemma_nv": "시선은 안정적이나, 미세한 입술 떨림과 약간의 긴장감이 관찰됨"
+    },
+    {
+      "ss": 30,
+      "frames": 90,
+      "wrist_visible": 0.0,
+      "hands_detected": 0.0,
+      "posture_std": 0.0398,
+      "head_sway": 0.0209,
+      "wrist_motion": 0.0,
+      "gesture_events": 0,
+      "gemma_nv": "시선은 정면을 응시하고 있으나, 미세한 입술 떨림이 관찰됨"
+    },
+    {
+      "ss": 33,
+      "frames": 90,
+      "wrist_visible": 0.0,
+      "hands_detected": 0.0,
+      "posture_std": 0.0227,
+      "head_sway": 0.0127,
+      "wrist_motion": 0.0,
+      "gesture_events": 0,
+      "gemma_nv": "눈 맞춤 유지, 미세한 미소와 안정적인 자세"
+    },
+    {
+      "ss": 36,
+      "frames": 65,
+      "wrist_visible": 0.26,
+      "hands_detected": 0.66,
+      "posture_std": 0.1826,
+      "head_sway": 0.1106,
+      "wrist_motion": 0.0548,
+      "gesture_events": 1,
+      "gemma_nv": "시선은 정면을 응시하나, 미세한 눈 깜빡임과 입술 움직임에서 약간의 긴장감이 느껴짐"
+    }
+  ]
+}

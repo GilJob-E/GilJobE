@@ -30,7 +30,9 @@ out/
 *.m4a
 *.webm
 
-# parked facial-detection 탐색 스크래치(메모 vision-nonverbal-instability — 우선순위 아님).
-# venv·모델 가중치라 무거움 → 실수 커밋 방지.
+# 비전 그라운딩 탐색(.dev/vision/ — 진입점 README.md, 메모 vision-nonverbal-instability).
+# venv·모델 가중치 = 무거움 / frames = kor.mp4에서 추출한 인물 스틸(클립과 같은 비커밋 정책).
+# 스크립트(.py)·결과(.json)·문서(.md)는 커밋한다.
 /.dev/.venv-vision/
-/.dev/models/
+/.dev/vision/models/
+/.dev/vision/frames/
