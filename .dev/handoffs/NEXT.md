@@ -3,7 +3,7 @@
 > SessionStart 훅이 이 파일을 가리킨다. **매 슬라이스 종료 시 이 파일을 다음 슬라이스로 갱신**한다.
 > 규칙: `CLAUDE.md` "세션 시작 프로토콜". 전체 빌드 순서: `PLAN.md §7`.
 
-## 지금 상태 (최근 갱신: Slice 6 완료 시점)
+## 지금 상태 (최근 갱신: Slice 7 완료 시점)
 - **완료: Slice 1** — 스캐폴드 + gje 4모듈 verbatim 복사 + 계층형 src. 상세 → `.dev/handoffs/slice-01-scaffold.md`.
 - **완료: Slice 2** — ★ STT 필요성 스파이크 **PASS**. 상세 → `.dev/handoffs/slice-02-stt-spike.md`.
   - **결정: `GemmaNativeTranscriber` 기본 STT, faster-whisper 안 붙임**(VRAM 추가 0). 정본 evidence: `tests/evidence/spike-transcribe.json`.
@@ -28,13 +28,26 @@
   - 커버: 완료순 emit→t-정렬 복원(PLAN §6 리스크, 가변지연 더블) · 풀 eval 레인 독립성+eval 레코드 JSONL(gate 더블) · 멀티턴 reset 격리 · 멀티싱크 fan-out 멀티셋 동일 · 한-레인-only partial flush(트레일링-nv 경로) · turn_end-last 불변식.
   - ★ 5-차원 적대적 리뷰(26 에이전트): fix-now 2건(major) 근본 수정 — (1) test 3가 Inline으로도 통과(real-pool 미증명)+Slice5 중복 → gated eval-lane으로 재작성(Inline이면 poll 교착=실 풀 load-bearing 실증), (2) partial-flush가 실 풀→JSONL 미검증 → 테스트 추가. dropped 9건은 반박/범위밖.
   - **오프라인 61 passed**(기존 55 무회귀), 플레이크 0/50. *GPU/브라우저 불요.*
+- **완료: Slice 7** — ingest(`media/ingest.py`). 상세 → `.dev/handoffs/slice-07-ingest.md`.
+  - 신규: `media/ingest.py` — aiortc **트랙 소비자**. **순수 변환**(`encode_jpeg`=reformat→PIL JPEG, `PcmResampler`=48k→16k mono, `_concat_pcm`) ↔ **얇은 async glue**(`consume_video` 1fps throttle / `consume_audio` flush 꼬리)로 분리. media=**leaf**(TurnWindower 미import, 구조적 `_Windower` Protocol). 타임스탬프=`frame.time` 첫프레임 t0 정규화. `except MediaStreamError`만(취소는 전파). 추론은 여기서 호출 안 함(executor 경유).
+  - ★ **resample-list gotcha** 실측·테스트로 잠금: `AudioResampler.resample()`은 **list 반환**(작은 입력=빈 list→`[0]`=IndexError), 꼬리 샘플은 **flush(resample(None))로만** → 순회+concat+flush 안 하면 손상. PyAV(av 16.1.0) API 전부 `.venv` 실제 호출로 검증(추측 0).
+  - deps 추가·설치: `aiortc~=1.14`·`av`·`numpy`·`Pillow`(pyproject). aiohttp는 Slice 8 몫.
+  - 인라인 적대적 리뷰(워크플로 정체로 직접 수행): **정정 버그 0**, 실제 커버리지 갭 3건 보강(mono 입력·yuv420p 웹캠 포맷·취소 전파).
+  - **오프라인 73 passed**(기존 61 무회귀 + ingest 12), 플레이크 0/30. *GPU/브라우저 불요.*
 
-## 다음 할 일 = Slice 7: ingest (media/ingest.py) — PLAN §7-7
-1. 먼저 `PLAN.md §7-7`(+ §아키텍처 데이터흐름, §리스크 resample-list) + `.dev/handoffs/slice-06-e2e-mock.md`(다음 슬라이스 섹션) 정독.
-2. **`src/giljobe/media/ingest.py`**: aiortc 트랙 소비자 — video→1fps JPEG(640×480) bytes, audio→Opus48k→**16k mono s16 PCM**. 타임스탬프 부착해 `TurnWindower.add_frame/add_audio`로 투입(이벤트루프 비차단). gje ingest 관용 유지.
-3. ★ **새 deps 추가·설치(이 슬라이스부터)**: `aiortc(~=1.14)`·`av(PyAV)`·`numpy`·`Pillow`를 pyproject에 추가(현재 deps는 `requests`만). 설치 시 최신 안정 고정.
-4. 검증: **`tests/test_ingest_slicing.py`**(합성 PyAV 프레임) — ★ **resample-list gotcha**(`AudioResampler.resample(frame)`는 **list 반환** → 순회·concat 안 하면 오디오 손상) 명시 assert · 1fps throttle · PCM Int16 정렬. *GPU/브라우저 불요.* (그 다음 Slice 8=server+브라우저, 9=라이브 e2e.)
-5. 리스크: **이벤트루프 블로킹**(critic/STT는 ingest 코루틴에서 직접 호출 금지 — 윈도워 executor 경유). **resample-list**(위). **getUserMedia secure context**(localhost/HTTPS, server 슬라이스).
+## ★★ 통합 타깃 (모든 다음 슬라이스가 인지 — 메모리 `giljob-docker-integration-target`)
+이 레포는 최종적으로 **`github.com/GilJob-E/giljob-docker`의 `services/analysis-engine/`**로 통합된다.
+입력 모델이 PLAN과 다름: aiortc 직접 수신이 아니라 **LiveKit room subscribe**. → ingest 순수 변환·windowing
+코어는 재사용, 트랙 소비 glue만 LiveKit SDK로 교체(그 seam으로 분리해 둠). 출력 소비자=`services/ai-engine`
+(Gemini, HTTP+JSON, internal). 컨테이너 규약(alpine→네이티브 시 slim 협의·requirements.txt·/healthz·
+AGENTS+CLAUDE 쌍)은 메모리 참조. **Slice 8 server 설계 시 의식**(데모는 aiortc로 진행하되 통합 어댑터 염두).
+
+## 다음 할 일 = Slice 8: server + 브라우저 — PLAN §7-8
+1. 먼저 `PLAN.md §7-8`(+ §아키텍처 데이터흐름, §5 턴 경계, §6 수동 스모크) + `.dev/handoffs/slice-07-ingest.md`(다음 슬라이스 섹션 + ★ poll-clock 계약) 정독.
+2. **`src/giljobe/server/app.py`**: aiohttp — `POST /offer`(SDP 협상), `GET /signals`(SSE, emit/sink), `/turn/start|end`, 정적 `web/`. **poll 타이머** 소유(★ ingest는 **미디어 상대초**로 프레임 태깅 → poll(now)를 같은 타임라인으로 몰 것). ingest `consume_video/consume_audio`를 트랙별 태스크로 기동. 단일 세션 가정(앱-레벨 공유 executor·단일 윈도워·단일 /signals).
+3. **`web/index.html`**: getUserMedia → RTCPeerConnection → POST /offer, `/signals` EventSource tail(데모 가시화).
+4. ★ 새 dep: **aiohttp** 추가·설치(server 몫, pyproject 주석대로). 검증: `http://localhost:PORT`(localhost=secure context) 수동 브라우저 스모크 — 협상→프레임/오디오 도착→`/signals`에 레코드 표출. 종료 후 `docker stop`+`nvidia-smi`로 VRAM 위생(라이브 critic 붙일 때).
+5. 리스크: **poll-clock 정합**(위, ingest note) · **getUserMedia secure context**(localhost/HTTPS) · **이벤트루프 블로킹**(critic/STT는 윈도워 executor 경유) · **통합 시 LiveKit 입력 모델**(위 ★★). (그 다음 Slice 9=라이브 e2e.)
 
 ## 불변 규칙 (매 슬라이스 공통)
 - src = 계층형 subpackage. import: **intra=relative / cross=absolute** (PLAN.md §1, 메모 `[[layered-src-structure]]`).
