@@ -4,18 +4,22 @@ version = "0.1.0"
 description = "면접 시뮬레이션 입력단 — WebRTC AV → gje(MMM) 비언어 비평 + STT 전사 → .json 송출"
 requires-python = ">=3.11"
 dependencies = [
-  "requests",      # vllm_client (블로킹 HTTP)
-  "aiortc~=1.14",  # WebRTC asyncio 트랙 수신 (ingest)
-  "av",            # PyAV — VideoFrame.reformat/to_image + AudioResampler (ingest)
-  "numpy",         # PCM/프레임 ndarray (ingest·media)
-  "Pillow",        # ndarray→JPEG 인코드(cv2 시스템 의존 회피, ingest)
+  "requests",          # vllm_client (블로킹 HTTP)
+  "aiortc~=1.14",      # WebRTC asyncio 트랙 수신 (ingest aiortc 경로 — 유지)
+  "av",                # PyAV — VideoFrame.reformat/to_image + AudioResampler (ingest)
+  "numpy",             # PCM/프레임 ndarray (ingest·media)
+  "Pillow",            # ndarray→JPEG 인코드(cv2 시스템 의존 회피, ingest)
+  "livekit~=1.1",      # LiveKit RTC — 통합 타깃 입력 어댑터(hidden 구독자, server). manylinux
+                       #   바이너리 wheel(Rust FFI) → 컨테이너 glibc(slim) 베이스 확정(alpine 불가)
+  "livekit-api~=1.1",  # LiveKit 토큰 발급(self-mint hidden subscriber 토큰; aiohttp/pyjwt 동반)
 ]
 
 [project.optional-dependencies]
 test = ["pytest"]
 whisper = ["faster-whisper"]  # STT 폴백 (스파이크 FAIL 시에만)
 
-# aiohttp는 server 슬라이스(Slice 8)에서 추가·설치(각 슬라이스 독립 검증 원칙).
+# SSE/aiohttp HTTP 서빙은 통합 타깃에선 안 쓰여 연기(피벗) — 출력은 JSONL(+추후 ai-engine WebhookSink).
+# (aiohttp는 livekit-api 전이 의존으로 이미 설치됨 — 직접 import 시에만 명시 의존 추가.)
 
 [tool.pytest.ini_options]
 pythonpath = ["src"]

@@ -22,11 +22,14 @@ poll(now)·turn 경계(start/end) 구동은 ingest의 일이 아니다 — 서�
 """
 from __future__ import annotations
 
+import inspect
 import io
 import logging
 from typing import Protocol
 
 import av
+import numpy as np
+from PIL import Image
 from aiortc.mediastreams import MediaStreamError
 
 logger = logging.getLogger(__name__)
@@ -150,3 +153,96 @@ async def consume_audio(
     tail = resampler.flush()  # 필터 지연 꼬리 — 안 배출하면 끝부분 누락
     if tail:
         windower.add_audio(last_rel, tail)
+
+
+# ── LiveKit 경로 (통합 타깃: 브라우저→LiveKit publish → 우리가 hidden 구독자로 join) ──
+# aiortc track.recv() 루프 대신 rtc.VideoStream/AudioStream의 async-iterable을 소비한다. 여기 두
+# 소비자는 **livekit을 import하지 않는다** — 이벤트 객체를 덕타이핑(.frame/.timestamp_us)으로만 다뤄
+# media를 leaf로 유지하고, 테스트가 async-iterable 더블을 주입할 수 있게 한다(실 stream 생성은 server).
+# aiortc 경로 대비 차이(연구 노트 `.dev/livekit-sdk-research.md` 실측):
+#   - 종료=EOS(async for 자연 종료) — MediaStreamError 대응물 없음. 취소는 그대로 전파.
+#   - audio는 AudioStream(sample_rate=16000, num_channels=1)이 16k mono Int16을 직접 공급
+#     → PcmResampler/_concat_pcm/flush 불필요(resample-list gotcha는 aiortc 경로 한정).
+#   - video ts=ev.timestamp_us/1e6, audio는 ts가 없어 누적 frame.duration으로 미디어시계 구성.
+
+def encode_jpeg_rgb(
+    data,
+    width: int,
+    height: int,
+    *,
+    size: tuple[int, int] = (VIDEO_WIDTH, VIDEO_HEIGHT),
+    quality: int = JPEG_QUALITY,
+) -> bytes:
+    """RGB24 raw 버퍼(rtc.VideoFrame.data) → 640×480 JPEG bytes. encode_jpeg(PyAV reformat)의
+    LiveKit 대응물 — 여기선 PIL resize로 스케일(cv2 회피 동일). 입력은 width*height*3 RGB24 가정;
+    행 stride 패딩이 있으면(드묾) 각 행 앞 width*3만 취해 흡수한다."""
+    arr = np.frombuffer(data, dtype=np.uint8)
+    expected = width * height * 3
+    if arr.size == expected:
+        arr = arr.reshape(height, width, 3)
+    else:  # stride 패딩: 한 행 바이트수 = 전체/height, 앞 width*3만 유효 픽셀
+        stride = arr.size // height
+        arr = arr.reshape(height, stride)[:, : width * 3].reshape(height, width, 3)
+    buf = io.BytesIO()
+    Image.fromarray(arr, mode="RGB").resize(size).save(buf, format="JPEG", quality=quality)
+    return buf.getvalue()
+
+
+def _pcm_bytes(data) -> bytes:
+    """rtc.AudioFrame.data(memoryview int16) → raw Int16 PCM bytes. 윈도워가 받는 규격(16k mono)."""
+    return data.cast("B").tobytes() if isinstance(data, memoryview) else bytes(data)
+
+
+async def _aclose(stream) -> None:
+    """stream에 aclose가 있으면 호출(실 rtc 스트림=async). 더블엔 없을 수 있어 가드한다."""
+    aclose = getattr(stream, "aclose", None)
+    if aclose is None:
+        return
+    res = aclose()
+    if inspect.isawaitable(res):
+        await res
+
+
+async def consume_video_lk(
+    stream,
+    windower: _Windower,
+    *,
+    target_fps: float = TARGET_FPS,
+    size: tuple[int, int] = (VIDEO_WIDTH, VIDEO_HEIGHT),
+    quality: int = JPEG_QUALITY,
+) -> None:
+    """rtc.VideoStream(format=RGB24)를 ~target_fps로 throttle해 JPEG로 윈도워에 투입.
+
+    타임스탬프=ev.timestamp_us/1e6를 첫 프레임 기준 상대초(t0=0)로. 종료는 EOS(async for 종료),
+    취소(CancelledError)는 전파. drop된 프레임은 인코드하지 않아 비용 거의 없다(aiortc 경로와 동일)."""
+    interval = 1.0 / target_fps
+    t0: float | None = None
+    emit_at = 0.0
+    try:
+        async for ev in stream:  # VideoFrameEvent
+            rel = ev.timestamp_us / 1e6
+            if t0 is None:
+                t0 = rel
+            rel -= t0
+            if rel + 1e-6 < emit_at:  # throttle: interval 안 지났으면 드롭(인코드 skip)
+                continue
+            emit_at = rel + interval
+            frame = ev.frame
+            windower.add_frame(
+                rel, encode_jpeg_rgb(frame.data, frame.width, frame.height, size=size, quality=quality)
+            )
+    finally:
+        await _aclose(stream)
+
+
+async def consume_audio_lk(stream, windower: _Windower) -> None:
+    """rtc.AudioStream(16k mono)을 그대로 윈도워에 투입(리샘플 불필요). 타임스탬프는 누적 미디어시계
+    (첫 청크 t=0, 이후 t += frame.duration) — AudioFrameEvent엔 ts가 없다(실측). 종료=EOS, 취소 전파."""
+    t = 0.0
+    try:
+        async for ev in stream:  # AudioFrameEvent (ts 없음)
+            f = ev.frame
+            windower.add_audio(t, _pcm_bytes(f.data))
+            t += f.duration  # 누적 미디어시계(poll-clock 계약 유지)
+    finally:
+        await _aclose(stream)

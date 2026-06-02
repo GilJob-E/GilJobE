@@ -3,7 +3,7 @@
 > SessionStart 훅이 이 파일을 가리킨다. **매 슬라이스 종료 시 이 파일을 다음 슬라이스로 갱신**한다.
 > 규칙: `CLAUDE.md` "세션 시작 프로토콜". 전체 빌드 순서: `PLAN.md §7`.
 
-## 지금 상태 (최근 갱신: Slice 7 완료 시점)
+## 지금 상태 (최근 갱신: Slice 8 완료 시점)
 - **완료: Slice 1** — 스캐폴드 + gje 4모듈 verbatim 복사 + 계층형 src. 상세 → `.dev/handoffs/slice-01-scaffold.md`.
 - **완료: Slice 2** — ★ STT 필요성 스파이크 **PASS**. 상세 → `.dev/handoffs/slice-02-stt-spike.md`.
   - **결정: `GemmaNativeTranscriber` 기본 STT, faster-whisper 안 붙임**(VRAM 추가 0). 정본 evidence: `tests/evidence/spike-transcribe.json`.
@@ -35,6 +35,11 @@
   - 인라인 적대적 리뷰(워크플로 정체로 직접 수행): **정정 버그 0**, 실제 커버리지 갭 3건 보강(mono 입력·yuv420p 웹캠 포맷·취소 전파).
   - **오프라인 73 passed**(기존 61 무회귀 + ingest 12), 플레이크 0/30. *GPU/브라우저 불요.*
   - ★ **레이턴시 evidence**(`.venv` 실측): encode_jpeg 1280×720≈**1.65ms**(1회/초)·1080p 2.1ms, resample 20ms조각≈**0.013ms**(~50회/초) → ingest가 이벤트루프 잡는 시간 ≈**2.4ms/초(0.24%)** = 무시 가능. "변환은 ms급, 추론만 executor로" 설계 가정 숫자로 확인. **종단(영상→emit) 레이턴시는 실 모델 필요 → Slice 9 라이브 e2e에서 측정**(미측정 의도적).
+- **완료: Slice 8** — LiveKit 구독자 입력 어댑터(PLAN §7-8 피벗 구현). 상세 → `.dev/handoffs/slice-08-livekit-subscriber.md`.
+  - 신규: `media/ingest.py`에 `consume_video_lk`/`consume_audio_lk`(livekit 미import 덕타이핑 glue, 16k mono 직수신=리샘플 불필요)+`encode_jpeg_rgb`(RGB24 코어). 신규 `server/`(`LiveKitSubscriber`=룸 lifecycle·hidden 구독·late-join 순회·sid dedup·poll 타이머·**worker→loop 브리지**(call_soon_threadsafe→queue→drain, SSE-safe)·aclose) + `token`(hidden self-mint) + `config`(env 토큰/self-mint) + `app.build_subscriber`(조립 seam). windowing/emit/recorder/sink **무변경**.
+  - ★★ **통합 스택이 로컬 실행 중 발견**: compose `giljob-v2`(소스 `/home/hoddukzoa/GilJob_v2`, 타user), livekit-server v1.8 @localhost:7880, api가 토큰발급. → 사용자 인가 하에 키 읽어 hidden 토큰 self-mint해 **실 LiveKit 라이브 e2e PASS**(window 3+turn_end 1, 실 RGB24/16k·ICE 통과, 3회). 메모리 `giljob-docker-integration-target` 갱신.
+  - **오프라인 93 passed**(기존 73 + ingest_lk 8 + server 12), 플레이크 0/5. LiveKit API는 설치본(1.1.9) introspection 실측(추측 0).
+  - ★ 6차원 적대적 리뷰(44 에이전트): 19→14확정→fix-now 1(소비 태스크 수명/관측성) 근본 수정+회귀가드. deferred 12건은 핸드오프에. **최주목 deferred=크로스트랙 t0/poll-clock 정합**(video=프레임 ts, audio=누적 duration 각자 t0 → 트랙 시작 시차 시 nv·stt 오프셋; v1 동시시작 수용, Slice 9 실 브라우저로 **측정 후 결정**).
 
 ## ★★ 통합 타깃 (모든 다음 슬라이스가 인지 — 메모리 `giljob-docker-integration-target`)
 이 레포는 최종적으로 **`github.com/GilJob-E/giljob-docker`의 `services/analysis-engine/`**로 통합된다.
@@ -45,33 +50,24 @@
 출력 소비자=`services/ai-engine`(Gemini, HTTP+JSON, internal). 컨테이너 규약(alpine→네이티브 시 slim
 협의·requirements.txt·/healthz·AGENTS+CLAUDE 쌍)은 메모리 참조.
 
-## 다음 할 일 = Slice 8: **LiveKit 구독자 입력 어댑터** (PLAN §7-8 **피벗** — 2026-06-02 사용자 결정)
-> ★ **피벗 사유**: 통합 타깃 프론트가 LiveKit publish 완성 + 브라우저 STT 우리한테 위임 확인 →
-> 실제 통합은 LiveKit 구독. PLAN §7-8의 **aiortc `POST /offer` + 자체 `web/index.html`은 타깃에서
-> 안 쓰여 throwaway** → 그 데모 대신 **진짜(LiveKit 구독자)**를 만든다. (aiortc 기반 `consume_video/
-> consume_audio`(Slice 7)는 유효한 채 남겨두되 핫패스는 LiveKit 버전으로.) **PLAN.md §7-8/§아키텍처는
-> 이 피벗으로 일부 superseded** — 본 NEXT.md가 우선(정본 갱신은 LiveKit 연구 결과 반영 후).
+## 다음 할 일 = Slice 9: **라이브 e2e + 실 critic** (종단 레이턴시·전사 품질 evidence)
+> Slice 8까지 라이브 e2e는 **MockCritic**(LiveKit 전송·배선 검증 전용). Slice 9는 **실 vLLM**로 종단
+> 품질·지연을 측정한다. PLAN §6/§9 "실 vLLM 라이브" 항목 + Slice 8 deferred #1(크로스트랙 t0 측정).
 
-1. 먼저 **`.dev/livekit-sdk-research.md`**(★ 실API 검증·의사코드·체크리스트 — Slice 8 시작점) + 이 섹션 +
-   `.dev/handoffs/slice-07-ingest.md`(★ poll-clock 계약) + 메모리 `giljob-docker-integration-target` 정독.
-2. **LiveKit 구독자**: `rtc.Room()` → `connect(url, token, RoomOptions(auto_subscribe=True))`로 `giljob-session-{id}`
-   join(**hidden 구독자** — token grant `can_subscribe=True/can_publish=False/hidden=True`). candidate audio+video
-   track 구독(★ 늦게 join 시 `track_subscribed` 안 오니 `room.remote_participants` 순회로 기존 track도 시작).
-   토큰: services/api 발급(권장) vs 우리 직접 발급(`livekit-api`) — **api 팀 합의 1건**(연구 노트 §2).
-3. **ingest 재사용 + glue 교체**: `encode_jpeg` RGB→640×480→JPEG **코어 재사용**(입력만 `rtc.VideoFrame`(RGB24)→
-   ndarray로 어댑트). 트랙 glue→`consume_*_lk(stream, windower)`(`async for ev in rtc.Video/AudioStream`).
-   ★ **audio는 `AudioStream(track, sample_rate=16000, num_channels=1)`로 받으면 16k mono 직접 공급 →
-   `PcmResampler`/`_concat_pcm`/`flush` 불필요**(resample-list gotcha는 aiortc 경로 한정). ts: video=
-   `ev.timestamp_us/1e6`, audio=**누적 `frame.duration`**(첫프레임 t0 정규화·poll-clock 유지). 종료=EOS(`async for`
-   자연종료, `MediaStreamError` 삭제), `CancelledError` 전파. windowing/emit/recorder/sink **전부 무변경**.
-   레이어링: 룸 lifecycle은 media 아닌 **신규 `server/`**에, media는 `consume_*_lk` glue까지(leaf 유지).
-   **기존 aiortc `consume_video/consume_audio`는 삭제하지 말고 유지**(핫패스만 LiveKit).
-4. ★ 새 dep: **`livekit~=1.1`**(RTC, 1.1.9대; 직접 발급 시 `livekit-api~=1.1`도). **manylinux wheel→컨테이너
-   glibc(slim) 확정**(alpine 불가). 검증: async-iterable 더블로 `consume_*_lk` 단위테스트(`test_ingest_lk.py` —
-   ts·1fps·duration누적·PCM bytes) + 실 LiveKit은 그쪽 `infra/docker-compose.media.yml`+publisher 스크립트, down이면 skip.
-5. 리스크: **로컬 LiveKit 서버 필요**(SDK fake 없음→더블 주입) · **poll-clock 정합** · **이벤트루프 블로킹**
-   (critic/STT는 executor; `room.on` 콜백 안 await 금지→`ensure_future`) · **토큰/권한**(hidden·canSubscribe).
-   (그 다음 Slice 9=라이브 e2e + 실 critic — 종단 레이턴시·전사 품질 evidence.)
+1. 먼저 **`.dev/handoffs/slice-08-livekit-subscriber.md`**(★ deferred 목록·미합의·실 LiveKit 배선) +
+   `README.md`(STT 결정) + 메모리 `giljob-docker-integration-target`(로컬 `giljob-v2` 실행 중) 정독.
+2. **실 critic 배선**: `build_subscriber(WindowCritic(default_vllm_client()), [JSONLSink], config)` — Mock
+   대신 실 `analysis/critic.py`+`GemmaNativeTranscriber`. vLLM 기동(현재 미기동):
+   `bash /home/kio/workspace/gje/serving/vllm_e4b_audio.sh` → `client.health()` 게이트, down이면 skip(관례).
+3. **실 candidate 입력** 두 경로 중: (a) 로컬 `giljob-v2` 프론트(브라우저 getUserMedia publish)에 우리가
+   hidden subscriber로 붙기, (b) publisher가 **`kor.mp4`**(repo 루트, 한국어, gitignore — 없으면 skip)
+   미디어를 LiveKit에 push. 토큰: 인가 하 self-mint(Slice 8 방식) 또는 api 발급.
+4. **측정(evidence JSON, gje `.sisyphus`/`tests/evidence` 관례)**: 종단 레이턴시(영상 프레임→signal/
+   transcript emit), per-window 비언어 read 품질, 전사 품질(한국어 verbatim·환각), eot finalize.
+   ★ **deferred #1 크로스트랙 t0 측정**: 실 브라우저 publish에서 video/audio 첫 프레임 도착 시차를 재고
+   nv·stt 윈도우 정렬이 깨지는지 확인 → 필요하면 공유 wall-clock t0 도입(server→consumer 주입). **측정 후 결정**.
+5. (선택) 통합 준비: `services/analysis-engine` 컨테이너 규약(slim base·requirements.txt·/healthz·AGENTS+
+   CLAUDE 쌍·내부포트) — 메모리 `giljob-docker-integration-target`. vLLM 유휴 시 `docker stop`+`nvidia-smi`(GPU 위생).
 
 ## 불변 규칙 (매 슬라이스 공통)
 - src = 계층형 subpackage. import: **intra=relative / cross=absolute** (PLAN.md §1, 메모 `[[layered-src-structure]]`).

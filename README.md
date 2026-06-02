@@ -14,7 +14,10 @@ Python 3.12 · aiortc(WebRTC) · gje(MMM)=vLLM+Gemma-4-E4B(네이티브 AV) · f
 - **Slice 1 완료**: 계층형 src 스캐폴드 + gje 4모듈 verbatim 복사.
 - **Slice 2 완료**: ★ STT 필요성 스파이크 — **PASS**.
 - **Slice 3 완료**: critic 포팅(`WindowCritic`) + 오프라인 더블(`MockCritic` 등). 적대적 리뷰 통과, 라이브 PASS(`tests/evidence/critic-live.json`).
-- 구현 설계·빌드 순서 → **`PLAN.md`**
+- **Slice 4–6 완료**: windowing(`TurnWindower` 4레인)·emit(`SignalRecorder`+SSE/JSONL Sink)·e2e mock 배선.
+- **Slice 7 완료**: ingest(aiortc 트랙 소비자, video→1fps JPEG / audio→16k mono PCM) + resample-list gotcha 잠금.
+- **Slice 8 완료**: ★ LiveKit 구독자 입력 어댑터(통합 타깃 피벗) — hidden participant로 룸 join → candidate track 구독 → 파이프라인 → JSONL. **실 LiveKit 라이브 e2e PASS**. (상세 → `.dev/handoffs/`)
+- 구현 설계·빌드 순서 → **`PLAN.md`** (단 §7-8은 LiveKit 피벗으로 일부 superseded — `.dev/handoffs/NEXT.md` 우선)
 - 프로젝트 지도·작업 규칙 → **`CLAUDE.md`**, `.claude/rules/`
 
 ## STT 결정 (Slice 2 스파이크, 2026-05-30)
@@ -29,4 +32,8 @@ Python 3.12 · aiortc(WebRTC) · gje(MMM)=vLLM+Gemma-4-E4B(네이티브 AV) · f
 gje(MMM)는 `/home/kio/workspace/gje`의 별도 repo다. **import하지 않고**, 필수 모듈만 `src/giljobe/`로 **복사**해 리팩토링한다. (원본 디렉토리는 이동/수정하지 않는다.)
 
 ## 실행
-빌드 후 채움 — `PLAN.md` §6(검증) 참고.
+- 오프라인 테스트: `pytest`(GPU/네트워크 불요 — 93 passed).
+- LiveKit 구독자(통합 입력): env `LIVEKIT_URL` + (`LIVEKIT_TOKEN` 또는 `LIVEKIT_API_KEY/SECRET`) 설정 후
+  `server.app.build_subscriber(critic, [JSONLSink(...)], SubscriberConfig.from_env(session_id=...))` → `await sub.run(url, token)`. (hidden subscriber로 `giljob-session-{id}` 룸에 붙어 candidate track 구독)
+- 실 LiveKit 라이브 e2e: `pytest tests/test_e2e_live_lk.py`(서버 7880 down/키 없으면 skip).
+- 실 critic 라이브(Slice 9 예정): vLLM 기동 후 종단 레이턴시·전사 품질 측정 — `PLAN.md` §6/§9.
