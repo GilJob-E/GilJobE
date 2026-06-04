@@ -42,7 +42,7 @@
   - ★ 6차원 적대적 리뷰(44 에이전트): 19→14확정→fix-now 1(소비 태스크 수명/관측성) 근본 수정+회귀가드. deferred 12건은 핸드오프에. **최주목 deferred=크로스트랙 t0/poll-clock 정합**(video=프레임 ts, audio=누적 duration 각자 t0 → 트랙 시작 시차 시 nv·stt 오프셋; v1 동시시작 수용, Slice 9에서 **측정 후 닫음**(아래).
 - **완료: Slice 9** — 라이브 e2e + 실 critic. 상세 → `.dev/handoffs/slice-09-live-critic.md`.
   - 신규: `tests/test_e2e_live_critic.py`(게이트 1) — **독립 livekit-server:v1.8(dev, --network host)** + kor.mp4 publisher(사전 디코드 360x640 RGB24@10fps + 16k mono, realtime push) → **실 `WindowCritic`+`GemmaNativeTranscriber`**(vLLM E4B) → JSONL 종단. **src 무수정**(계측=테스트 레벨: `_ClockSink` emit시각 + `_InstWindower` 첫 add_* 시각). evidence `tests/evidence/live-critic.json`(판정)+`…raw.json`(수치).
-  - ★ **giljob-v2 스택은 OOM(Exit 137)으로 내려가 있었음** → 깨우지 않고 독립 livekit(통합 동일 v1.8)로 측정. dev 키 devkey/secret(통합 키 아님).
+  - ★ **측정 시점 giljob-v2 스택이 내려가 있었음**(원인=의도적 `docker compose down`, Exit 137=SIGKILL·`OOMKilled=false`·메모리 118GB 여유 — **OOM 아님**; 슬라이스 후 `docker start`로 재기동) → 당시엔 깨우지 않고 독립 livekit(통합 동일 v1.8)로 측정. dev 키 devkey/secret(통합 키 아님).
   - 측정(PASS 2런, window 14·eval 2·turn_end 1 동일): **freshness lag** live median 0.76~0.99s/max 1.07(poll지연+추론, 3s cadence 충분) · **전사** kor.mp4 자기소개 verbatim 유지(★ **Opus 왕복**에도; ASR 오류=비결정적 음운 슬립) · **nv** engaged/neutral/nervous 구분(단 긴장류 그라운딩 불가=`[[vision-nonverbal-instability]]` 재확인) · **eot** turn_end(transcript_full+compact eval) OK.
   - ★ **deferred #1 크로스트랙 t0 = 측정으로 닫음**: audio가 video보다 **~0.3s 선행**(LiveKit이 video 늦게 딜리버). 0.3s≪3s라 페어링 유효 → **v1 수용**(공유 wall-clock t0 도입 안 함). 재검토 트리거=윈도우<1.5s 또는 실 브라우저 skew>1s. 파일 publisher라 이 값은 하한(브라우저는 더 클 수 있음).
   - **오프라인 93 무회귀**. 적대적 리뷰=인라인(측정 방법론 자기검증, 정정 버그 0). GPU 위생: 종료 시 `docker stop vllm-gemma4-e4b livekit-dev`+`nvidia-smi`.

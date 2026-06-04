@@ -40,7 +40,7 @@ README.md                       (수정) Slice 9 상태 + STT 라이브 재확�
 
 - **vLLM**: `bash /home/kio/workspace/gje/serving/vllm_e4b_audio.sh`(HF_TOKEN env 필요, 값 미출력).
   컨테이너 `vllm-gemma4-e4b`, `localhost:8000`, google/gemma-4-E4B-it. ~1–2분 로드.
-- **LiveKit**: ★ 통합 giljob-v2 스택은 **OOM(Exit 137)으로 전부 내려가 있었음** → 깨우지 않고 **독립
+- **LiveKit**: ★ 측정 시점 통합 giljob-v2 스택이 **내려가 있었음**(원인=**의도적 `docker compose down`**: Exit 137=SIGTERM grace 후 SIGKILL, `OOMKilled=false` 전부, 메모리 118GB 여유 — **OOM 아님**. 슬라이스 종료 후 `docker start`로 **재기동함**) → 당시엔 깨우지 않고 **독립
   livekit-server를 dev로** 띄움: `docker run -d --name livekit-dev --network host livekit/livekit-server:v1.8 --dev`.
   dev 키 `devkey/secret`(플레이스홀더, 통합 키 아님). `--network host`로 localhost ICE 단순화(7880/7881/
   7882). 통합 타깃과 **동일 버전(v1.8)**이라 경로 충실. publisher/subscriber 토큰 둘 다 dev 키로 self-mint.
