@@ -65,6 +65,7 @@
 2. **통합 패키징**: `services/analysis-engine/` 규약(메모리 참조) — slim base(alpine→네이티브 협의)·
    `requirements.txt`(pyproject deps 추출)·`/healthz`·`AGENTS.md`+`CLAUDE.md` 쌍·내부포트. 진입점=
    `server.app.build_subscriber(WindowCritic(default_vllm_client()), [JSONLSink, WebhookSink(ai-engine)], SubscriberConfig.from_env(...))` → `await sub.run(url, token)`.
+   ★ **자체 vLLM/GPU 불필요** — 스택 `giljob-v2-gemma-e4b`가 **우리와 동일 이미지·모델·오디오네이티브**(2026-06-04 실측 확정, 메모리 참조). `VLLM_BASE_URL=http://gemma-e4b:8000`(내부) 주입 + `depends_on: gemma-e4b`로 **공유**. 단 multi-audio(≥2) 쓰려면 그쪽 런치에 `--limit-mm-per-prompt audio≥2` 추가 필요(v1 critic=1audio+1video라 무관).
 3. **출력 소비자 연결**: `services/ai-engine`(Gemini, HTTP+JSON, internal)로의 송출 = `WebhookSink` 추가
    (PLAN §4 (c); 지금은 SSE+JSONL만). 실 URL/스키마 합의 후 `emit/sink.py`에 추가(per-window 비용·재시도·
    순서 — emit는 models만 의존 유지).
