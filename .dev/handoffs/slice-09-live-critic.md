@@ -77,8 +77,16 @@ PyAV로 미리 풀어 video=360x640 RGB24 @10fps 리스트 + audio=16k mono Int1
 ## 검증 결과 (PASS)
 
 - 오프라인 `pytest`(live/spike 4개 제외) → **93 passed**(기존 무회귀; 새 게이트 테스트는 경로 제외).
-- 라이브 e2e `tests/test_e2e_live_critic.py` → **PASS 2회**(window 14·eval 2·turn_end 1 동일). 게이트:
+- 라이브 e2e `tests/test_e2e_live_critic.py` → **PASS** (window 14·eval 2·turn_end 1 동일). 게이트:
   vLLM health + LiveKit 7880 + kor.mp4, 미충족 시 skip(gje 관례).
+  - ★ **두 구성 검증(각 2런, 결과 동일)**: (A) 독립 livekit-dev + 우리 vLLM, (B) **통합 스택 livekit
+    (7880, 실 키=container env) + 공유 gemma-e4b vLLM(8000)**. B는 우리 vLLM 안 띄우고 스택 백엔드를
+    그대로 — analysis-engine이 자체 vLLM 없이 스택 gemma-e4b 공유하는 실제 통합 구성 실증. 자격증명
+    해석을 sibling(test_e2e_live_lk)처럼 env→컨테이너→dev fallback으로 일반화(`_resolve_creds`).
+  - ★ **공유 백엔드 = 동일물**: giljob-v2-gemma-e4b가 우리와 동일 이미지(vllm-gemma4-audio:local)·모델.
+    `--limit-mm-per-prompt` 없어도 video+audio 1개씩은 기본 허용 → critic 전부 동작. 메모리
+    `giljob-docker-integration-target` 갱신. (주의: 스택 LiveKit 키가 문자 그대로 'devkey'/secret은
+    'devsecret-32b' — dev fallback과 *값*으로 구분 불가라 `_resolve_creds`가 source 라벨을 따로 반환.)
 - 판정·측정치 → `tests/evidence/live-critic.json`(루브릭·deferred#1 결정) + `…raw.json`(최신 런 수치).
 
 ## ★ 적대적 리뷰 (인라인 — 워크플로 미사용; 사용자 미옵트인)

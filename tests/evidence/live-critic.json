@@ -2,13 +2,18 @@
   "slice": 9,
   "check": "e2e-live-critic — 실 LiveKit 구독 → 실 WindowCritic+GemmaNativeTranscriber(같은 vLLM E4B) → JSONL",
   "model": "google/gemma-4-E4B-it",
-  "transport": "독립 livekit-server:v1.8 (dev, --network host, localhost ICE). 통합 타깃과 동일 버전, giljob-v2 스택 무관(키 devkey/secret).",
+  "configs_validated": {
+    "A_독립": "독립 livekit-server:v1.8(dev, --network host, devkey/secret) + 우리 vLLM(vllm-gemma4-e4b). 2런.",
+    "B_공유스택(통합)": "통합 스택 giljob-v2-livekit(7880, 실 키=container env 'devkey'/'devsecret-32b') + **공유 gemma-e4b vLLM(8000)**. 2런. ★ 우리 vLLM 안 띄우고 스택 백엔드 그대로 — analysis-engine이 자체 vLLM 없이 스택 gemma-e4b를 쓰는 실제 통합 구성 실증.",
+    "결과_동일성": "두 구성 모두 counts 14/2/1 동일, freshness lag ~0.9–1.2s, 크로스트랙 skew ~-0.37s, 전사 verbatim. → LiveKit 서버·vLLM 인스턴스 무관하게 종단 동작 동일."
+  },
+  "shared_backend_finding": "★ giljob-v2-gemma-e4b = 우리와 **동일 이미지(vllm-gemma4-audio:local)·모델(google/gemma-4-E4B-it)**. 그쪽 런치에 `--limit-mm-per-prompt`가 없어도 **video+audio 멀티모달 1개씩은 vLLM 기본 허용** → 우리 critic 전부(nv 영상+음성, 전사, 풀 eval, compact tail) 동작. ‘8000 포트 충돌’이 아니라 *같은 백엔드 공유*. (multi-audio≥2 쓰려면 그쪽 런치에 플래그 추가 필요; v1 critic=1audio+1video라 무관.)",
   "input": "kor.mp4 (한국어 자기소개, 지원자 이나래/SK하이닉스/반도체 공정). publisher 360x640 RGB24 @10fps + 16k mono, realtime push. **Opus 왕복 포함**(Slice 2 ffmpeg 직추출과 달리 실 전송 경로).",
-  "runs": 2,
+  "runs": "구성 A 2런 + 구성 B 2런 = 4런",
   "verdict": "PASS",
-  "decision": "실 critic이 LiveKit 구독 경로에서 종단 동작. freshness lag ~0.6–1.1s(3s cadence 충분), 전사 한국어 verbatim 유지(Opus+3s그리드에도), nv read 다양·구체. eot finalize OK. → Slice 9 완료 기준 충족. 통합(services/analysis-engine)에 이 배선(build_subscriber+WindowCritic) 그대로 사용 가능.",
+  "decision": "실 critic이 LiveKit 구독 경로에서 종단 동작 — 독립 구성 + **공유 스택 백엔드(gemma-e4b) 구성 둘 다**. freshness lag ~0.9–1.2s(3s cadence 충분), 전사 한국어 verbatim 유지(Opus+3s그리드에도), nv read 다양·구체. eot finalize OK. → Slice 9 완료 기준 충족. 통합(services/analysis-engine)은 자체 vLLM 없이 스택 gemma-e4b 공유(VLLM_BASE_URL), 이 배선(build_subscriber+WindowCritic) 그대로 사용 가능.",
   "rubric": {
-    "latency": "PASS — freshness lag(emit − 윈도우 미디어종료) live median 0.76~0.99s, max 1.07s(2런). = poll지연(≤0.5s) + nv추론(~0.3~0.7s). 3s 윈도우 cadence 대비 충분(다음 윈도우 전에 emit). eot-flush 윈도우는 1.0~1.3s(end_turn 대기 포함, 정상).",
+    "latency": "PASS — freshness lag(emit − 윈도우 미디어종료) live median 0.76~1.14s, max ~1.2s(4런: 독립+공유스택). = poll지연(≤0.5s) + nv추론(~0.3~0.7s). 3s 윈도우 cadence 대비 충분(다음 윈도우 전에 emit). 공유 gemma-e4b는 `--enable-prefix-caching` 없어 살짝 높을 수 있으나 동일 오더. eot-flush 윈도우는 1.0~1.5s(end_turn 대기 포함, 정상).",
     "nonverbal_quality": "PASS(단, 그라운딩 한계 명시) — state가 engaged/neutral/nervous로 *구분*되고(한 라벨 고정 아님), note가 구체적 관찰('미세한 눈 깜빡임과 입술 긴장', '상체가 약간 앞으로 기울어져 집중'). 단 intensity는 사실상 0.3/0.6 이분(프롬프트의 눈금 보정 요청에도 습관값) + nervous/긴장류는 **검증 불가**(메모리 vision-nonverbal-instability: 젬마 비언어는 descriptive-plausible이나 ground-truth 불가). → '읽기는 그럴듯·일관, 단 긴장/자신감 같은 내적상태 그라운딩은 신뢰 금지'가 확정 결론과 일치.",
     "transcription_quality": "PASS — transcript_full(314~317자)이 kor.mp4 자기소개 내용과 충실히 일치(verbatim, 요약·번역·환각·거부 없음). 도메인어 정확(SK 하이닉스/공정/파라미터 테스트/차세대 메모리/장학금). ASR 오류는 비결정적 음운 슬립(공모전→공무전, 수상→주장/배상, 성적→상속 등)으로 런마다 다름(run2는 '공정 속도' 정확) — Opus 왕복+3s 하드컷+realtime 지터 탓. Slice 2 ffmpeg 직추출보다 약간 많으나 면접관 LLM 입력으로 충분(content-faithful).",
     "transcript_fragmentation": "EXPECTED — 3s 그리드가 어절 중간 절단('50번 이상 파라미터 테스트.' | '를 진행해서'). transcript_full이 공백 join으로 보정(PLAN §리스크 '전사 단편화', best-effort). 심하면 stt 그리드 폭을 nv와 독립 확대(config) — v1은 미적용.",

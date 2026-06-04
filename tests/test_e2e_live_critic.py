@@ -16,13 +16,18 @@ subscriber가 같은 룸에 붙어 ingest→windower→real critic→JSONL. publ
 이벤트루프에서 도는데, critic은 윈도워 executor(스레드풀)에서 돌고 publisher는 사전 디코드분만
 realtime으로 흘리므로 이벤트루프를 막지 않는다.
 
-게이트(둘 중 하나라도 불가 → skip, gje test_e2e_pipeline 관례):
-  - vLLM health(client.health()) — 다운이면 skip(`bash /home/kio/workspace/gje/serving/vllm_e4b_audio.sh`).
-  - LiveKit 서버 도달(localhost:7880). dev 모드 키(devkey/secret) — 통합 giljob-v2 키 불요.
+★ vLLM 백엔드 = `VLLM_BASE_URL`(기본 localhost:8000). 통합 스택의 `giljob-v2-gemma-e4b`가 우리와
+**동일 이미지·모델·오디오네이티브**(실측 확정)라, 스택이 떠 있으면 우리 vLLM을 따로 안 띄우고 그
+8000을 그대로 공유한다(메모리 `giljob-docker-integration-target`). LiveKit도 동일 — 스택이 떠 있으면
+스택 livekit(7880)+실 키로, 아니면 독립 livekit-dev로 자동 적응(`_resolve_creds`: env→컨테이너→dev).
+
+게이트(하나라도 불가 → skip, gje test_e2e_pipeline 관례):
+  - vLLM health(client.health() on VLLM_BASE_URL) — 다운이면 skip.
+  - LiveKit 7880 도달 + 키(env/컨테이너/dev fallback) 해석.
   - kor.mp4(repo 루트, gitignore) 존재.
 
 측정치는 `tests/evidence/live-critic.raw.json`에 기록(판정·루브릭은 사람이 .json으로 큐레이션).
-재현: 독립 livekit 기동 후 `.venv/bin/python -m pytest tests/test_e2e_live_critic.py -v -s`
+재현: vLLM(또는 스택 gemma-e4b) + livekit 기동 후 `.venv/bin/python -m pytest tests/test_e2e_live_critic.py -v -s`
 """
 from __future__ import annotations
 
@@ -31,15 +36,16 @@ import json
 import os
 import socket
 import statistics
+import subprocess
 from collections import Counter
 from datetime import timedelta
 from pathlib import Path
 
 import pytest
 
-LIVEKIT_URL = "ws://localhost:7880"
+LIVEKIT_HOST_URL = "ws://localhost:7880"
 DEV_KEY = "devkey"      # livekit-server --dev 기본 키(플레이스홀더, 비밀 아님)
-DEV_SECRET = "secret"   # 통합 타깃 키가 아니라 독립 dev 서버 전용
+DEV_SECRET = "secret"   # 독립 livekit-dev fallback 전용(통합 키 아님)
 
 CLIP = Path(__file__).parent.parent / "kor.mp4"
 EVIDENCE = Path(__file__).parent / "evidence" / "live-critic.raw.json"
@@ -51,15 +57,50 @@ EOT_DEADLINE = 8.0      # 실 모델 compact tail(~2–3s)/최종 stt를 기다�
 SAMPLE_RATE = 16000
 
 
-# ── 게이트 ──
-def _livekit_up() -> bool:
-    host = LIVEKIT_URL.split("://", 1)[-1].split("/", 1)[0]
+# ── LiveKit 자격증명 해석(sibling test_e2e_live_lk와 동일 정책) ──
+# env 키 우선 → 로컬 giljob-v2 api 컨테이너 env(인가됨, 값 노출 안 함) → 독립 livekit-dev devkey fallback.
+# 그래서 통합 스택이 떠 있으면 **스택 livekit(7880)+실 키**로, 아니면 독립 livekit-dev로 자동 적응한다.
+def _read_container_keys() -> tuple[str, str] | None:
+    """로컬 giljob-v2 api 컨테이너 env에서 LiveKit 키를 읽는다(사용자 인가; 값 로그/출력 안 함)."""
+    try:
+        out = subprocess.run(
+            ["docker", "inspect", "giljob-v2-api-1",
+             "--format", "{{range .Config.Env}}{{println .}}{{end}}"],
+            capture_output=True, text=True, timeout=10,
+        )
+        if out.returncode != 0:
+            return None
+        env = dict(line.split("=", 1) for line in out.stdout.splitlines() if "=" in line)
+        key, secret = env.get("LIVEKIT_API_KEY"), env.get("LIVEKIT_API_SECRET")
+        return (key, secret) if key and secret else None
+    except Exception:  # noqa: BLE001 - docker 없음/타임아웃 → 게이트 미충족(아래 dev fallback)
+        return None
+
+
+def _resolve_creds() -> tuple[str, str, str, str] | None:
+    """(url, key, secret, source) 또는 None(7880 미도달). env→컨테이너→dev fallback 순.
+    source는 키 *출처* 라벨 — 스택 키가 우연히 'devkey'여도 dev fallback과 구분하려고 따로 둔다
+    (값으로 판정하면 안 됨: giljob-v2 키 = 'devkey'/'devsecret-32b' 라 DEV_KEY와 string 충돌)."""
+    key, secret = os.environ.get("LIVEKIT_API_KEY"), os.environ.get("LIVEKIT_API_SECRET")
+    url = os.environ.get("LIVEKIT_URL") or LIVEKIT_HOST_URL
+    source = "env"
+    if not (key and secret):
+        ks = _read_container_keys()
+        if ks is not None:
+            key, secret = ks
+            url = LIVEKIT_HOST_URL  # 컨테이너 LIVEKIT_URL은 내부망 → host에선 localhost
+            source = "container(giljob-v2)"
+        else:
+            key, secret = DEV_KEY, DEV_SECRET  # 독립 livekit-dev fallback
+            source = "dev-fallback"
+    host = url.split("://", 1)[-1].split("/", 1)[0]
     hostname, _, port = host.partition(":")
     try:
         with socket.create_connection((hostname or "localhost", int(port or 7880)), timeout=2):
-            return True
+            pass
     except OSError:
-        return False
+        return None
+    return url, key, secret, source
 
 
 # ── kor.mp4 사전 디코드(이벤트루프 밖에서 미리 — realtime push 중 디코드 지터/블로킹 방지) ──
@@ -97,11 +138,11 @@ def _decode_kor(path: Path, *, fps: float, size: tuple[int, int]):
     return frames, b"".join(chunks)
 
 
-def _pub_token(room: str) -> str:
+def _pub_token(key: str, secret: str, room: str) -> str:
     from livekit import api
 
     return (
-        api.AccessToken(DEV_KEY, DEV_SECRET)
+        api.AccessToken(key, secret)
         .with_identity("candidate-sim")
         .with_grants(api.VideoGrants(room_join=True, room=room, can_publish=True, can_subscribe=False))
         .with_ttl(timedelta(seconds=600))
@@ -215,8 +256,10 @@ def test_e2e_live_critic(tmp_path):
         client.health()
     except Exception as e:  # noqa: BLE001 - 다운이면 라이브 검증 불가 → skip
         pytest.skip(f"vLLM down ({client.base_url}): {e}")
-    if not _livekit_up():
-        pytest.skip(f"LiveKit 서버 미도달 ({LIVEKIT_URL}) — 독립 livekit-server 기동 후 재시도")
+    creds = _resolve_creds()
+    if creds is None:
+        pytest.skip(f"LiveKit 서버 미도달 ({LIVEKIT_HOST_URL}) — 스택 livekit 또는 독립 livekit-dev 기동 후 재시도")
+    lk_url, lk_key, lk_secret, lk_src = creds
     if not CLIP.exists():
         pytest.skip(f"clip missing: {CLIP}")
 
@@ -225,7 +268,7 @@ def test_e2e_live_critic(tmp_path):
     room = f"giljob-session-slice9-{os.getpid()}"
     path = tmp_path / "signals.jsonl"
     jsonl = JSONLSink(path)
-    sub_token = subscriber_token(DEV_KEY, DEV_SECRET, room)
+    sub_token = subscriber_token(lk_key, lk_secret, room)
 
     state: dict = {}
 
@@ -243,9 +286,11 @@ def test_e2e_live_critic(tmp_path):
         sub = LiveKitSubscriber(rtc.Room(), inst, recorder, poll_interval=POLL_INTERVAL)
 
         await sub.start()
-        await asyncio.wait_for(sub.connect(LIVEKIT_URL, sub_token), timeout=15)
+        await asyncio.wait_for(sub.connect(lk_url, sub_token), timeout=15)
         stop = asyncio.Event()
-        pub = asyncio.create_task(_publish_kor(LIVEKIT_URL, _pub_token(room), frames, audio_pcm, stop))
+        pub = asyncio.create_task(
+            _publish_kor(lk_url, _pub_token(lk_key, lk_secret, room), frames, audio_pcm, stop)
+        )
         try:
             await asyncio.sleep(media_dur + 1.5)  # 클립 전체 스트리밍 + 소량 여유
         finally:
@@ -313,12 +358,14 @@ def test_e2e_live_critic(tmp_path):
     }
 
     transcript_full = turn_ends[0]["transcript_full"] if turn_ends else ""
+    livekit_desc = f"livekit @{lk_url} (keys: {lk_src})"  # source 기준(스택 키도 'devkey'라 값 판정 불가)
     EVIDENCE.parent.mkdir(parents=True, exist_ok=True)
     EVIDENCE.write_text(json.dumps({
         "slice": 9,
         "check": "e2e-live-critic (LiveKit subscribe → 실 WindowCritic+GemmaNativeTranscriber → JSONL)",
         "model": critic_model(),
-        "transport": "독립 livekit-server:v1.8 (dev, --network host, localhost ICE)",
+        "vllm_base_url": client.base_url,
+        "transport": livekit_desc,
         "input": f"kor.mp4 (publisher {PUB_W}x{PUB_H} RGB24 @{PUB_FPS:g}fps + 16k mono, realtime)",
         "publish_media_dur_s": round(media_dur, 2),
         "params": {"poll_interval": POLL_INTERVAL, "eot_deadline_s": EOT_DEADLINE, "nv_grid_s": 3.0},
