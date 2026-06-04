@@ -1,0 +1,25 @@
+{
+  "slice": 9,
+  "check": "e2e-live-critic — 실 LiveKit 구독 → 실 WindowCritic+GemmaNativeTranscriber(같은 vLLM E4B) → JSONL",
+  "model": "google/gemma-4-E4B-it",
+  "transport": "독립 livekit-server:v1.8 (dev, --network host, localhost ICE). 통합 타깃과 동일 버전, giljob-v2 스택 무관(키 devkey/secret).",
+  "input": "kor.mp4 (한국어 자기소개, 지원자 이나래/SK하이닉스/반도체 공정). publisher 360x640 RGB24 @10fps + 16k mono, realtime push. **Opus 왕복 포함**(Slice 2 ffmpeg 직추출과 달리 실 전송 경로).",
+  "runs": 2,
+  "verdict": "PASS",
+  "decision": "실 critic이 LiveKit 구독 경로에서 종단 동작. freshness lag ~0.6–1.1s(3s cadence 충분), 전사 한국어 verbatim 유지(Opus+3s그리드에도), nv read 다양·구체. eot finalize OK. → Slice 9 완료 기준 충족. 통합(services/analysis-engine)에 이 배선(build_subscriber+WindowCritic) 그대로 사용 가능.",
+  "rubric": {
+    "latency": "PASS — freshness lag(emit − 윈도우 미디어종료) live median 0.76~0.99s, max 1.07s(2런). = poll지연(≤0.5s) + nv추론(~0.3~0.7s). 3s 윈도우 cadence 대비 충분(다음 윈도우 전에 emit). eot-flush 윈도우는 1.0~1.3s(end_turn 대기 포함, 정상).",
+    "nonverbal_quality": "PASS(단, 그라운딩 한계 명시) — state가 engaged/neutral/nervous로 *구분*되고(한 라벨 고정 아님), note가 구체적 관찰('미세한 눈 깜빡임과 입술 긴장', '상체가 약간 앞으로 기울어져 집중'). 단 intensity는 사실상 0.3/0.6 이분(프롬프트의 눈금 보정 요청에도 습관값) + nervous/긴장류는 **검증 불가**(메모리 vision-nonverbal-instability: 젬마 비언어는 descriptive-plausible이나 ground-truth 불가). → '읽기는 그럴듯·일관, 단 긴장/자신감 같은 내적상태 그라운딩은 신뢰 금지'가 확정 결론과 일치.",
+    "transcription_quality": "PASS — transcript_full(314~317자)이 kor.mp4 자기소개 내용과 충실히 일치(verbatim, 요약·번역·환각·거부 없음). 도메인어 정확(SK 하이닉스/공정/파라미터 테스트/차세대 메모리/장학금). ASR 오류는 비결정적 음운 슬립(공모전→공무전, 수상→주장/배상, 성적→상속 등)으로 런마다 다름(run2는 '공정 속도' 정확) — Opus 왕복+3s 하드컷+realtime 지터 탓. Slice 2 ffmpeg 직추출보다 약간 많으나 면접관 LLM 입력으로 충분(content-faithful).",
+    "transcript_fragmentation": "EXPECTED — 3s 그리드가 어절 중간 절단('50번 이상 파라미터 테스트.' | '를 진행해서'). transcript_full이 공백 join으로 보정(PLAN §리스크 '전사 단편화', best-effort). 심하면 stt 그리드 폭을 nv와 독립 확대(config) — v1은 미적용.",
+    "eot_finalize": "PASS — turn_end가 파일 마지막, transcript_full(합본) + compact eval(critique 2 + summary). 발화중 풀 eval(채널② 16s) 2건도 송출 — verbal/vocal/visual 비평이 실제 *비평가*적('근거가 감정적', '수동적·모호한 표현', '제스처 부족'), 사탕발림 아님(EVAL_SYSTEM 의도대로)."
+  },
+  "crosstrack_t0_deferred_1": {
+    "measured": "audio가 video보다 ~0.3s 선행(run1 -0.377s, run2 -0.298s). 첫 video는 t0+0.39s, 첫 audio는 t0+0.01s 도착 — LiveKit이 video 트랙을 더 늦게 딜리버(네고/키프레임 대기).",
+    "impact": "nv는 video 미디어시계(첫 video=0), stt는 audio 미디어시계(첫 audio=0)로 각자 0 정규화 → 같은 t로 페어링된 nv·transcript가 실제로는 ~0.3s 어긋난 구간을 기술. 단 0.3s ≪ 3s 윈도우라 오버랩 >87%, 윈도우 인덱스 어긋남/페어링 깨짐 없음.",
+    "decision": "**v1 수용**(측정 후 결정 — 두 런 모두 skew<0.4s, 3s 그리드에서 페어링 유효). 재검토 트리거: (a) stt/nv 윈도우를 <1.5s로 줄이거나, (b) 실 브라우저 getUserMedia에서 skew>1s 측정 시 → 서버가 공유 wall-clock t0를 양 소비자(consume_video_lk/consume_audio_lk)에 주입(slice-08 deferred #1 근본해결안). v1은 도입 안 함(YAGNI, 결합도↑).",
+    "caveat": "파일 publisher(두 트랙 동시 송출)라 이 skew는 **LiveKit 구독/네고 시차의 하한**. 실 브라우저는 카메라 기동(보통 마이크보다 느림) skew가 더해져 video가 더 늦을 수 있음 → audio 선행이 더 커질 수 있음. 실 브라우저 측정은 옵션 2(giljob-v2 풀스택) 필요 — v1 미수행."
+  },
+  "measurements_raw": "tests/evidence/live-critic.raw.json (테스트가 매 런 덮어씀 — 현재=최신 런).",
+  "repro": "독립 livekit-server 기동(docker run -d --name livekit-dev --network host livekit/livekit-server:v1.8 --dev) + vLLM 기동 후 `.venv/bin/python -m pytest tests/test_e2e_live_critic.py -v -s`. 게이트(vLLM health·LiveKit 7880·kor.mp4) 미충족 시 skip."
+}

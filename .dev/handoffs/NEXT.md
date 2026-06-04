@@ -3,7 +3,7 @@
 > SessionStart 훅이 이 파일을 가리킨다. **매 슬라이스 종료 시 이 파일을 다음 슬라이스로 갱신**한다.
 > 규칙: `CLAUDE.md` "세션 시작 프로토콜". 전체 빌드 순서: `PLAN.md §7`.
 
-## 지금 상태 (최근 갱신: Slice 8 완료 시점)
+## 지금 상태 (최근 갱신: Slice 9 완료 시점)
 - **완료: Slice 1** — 스캐폴드 + gje 4모듈 verbatim 복사 + 계층형 src. 상세 → `.dev/handoffs/slice-01-scaffold.md`.
 - **완료: Slice 2** — ★ STT 필요성 스파이크 **PASS**. 상세 → `.dev/handoffs/slice-02-stt-spike.md`.
   - **결정: `GemmaNativeTranscriber` 기본 STT, faster-whisper 안 붙임**(VRAM 추가 0). 정본 evidence: `tests/evidence/spike-transcribe.json`.
@@ -39,7 +39,13 @@
   - 신규: `media/ingest.py`에 `consume_video_lk`/`consume_audio_lk`(livekit 미import 덕타이핑 glue, 16k mono 직수신=리샘플 불필요)+`encode_jpeg_rgb`(RGB24 코어). 신규 `server/`(`LiveKitSubscriber`=룸 lifecycle·hidden 구독·late-join 순회·sid dedup·poll 타이머·**worker→loop 브리지**(call_soon_threadsafe→queue→drain, SSE-safe)·aclose) + `token`(hidden self-mint) + `config`(env 토큰/self-mint) + `app.build_subscriber`(조립 seam). windowing/emit/recorder/sink **무변경**.
   - ★★ **통합 스택이 로컬 실행 중 발견**: compose `giljob-v2`(소스 `/home/hoddukzoa/GilJob_v2`, 타user), livekit-server v1.8 @localhost:7880, api가 토큰발급. → 사용자 인가 하에 키 읽어 hidden 토큰 self-mint해 **실 LiveKit 라이브 e2e PASS**(window 3+turn_end 1, 실 RGB24/16k·ICE 통과, 3회). 메모리 `giljob-docker-integration-target` 갱신.
   - **오프라인 93 passed**(기존 73 + ingest_lk 8 + server 12), 플레이크 0/5. LiveKit API는 설치본(1.1.9) introspection 실측(추측 0).
-  - ★ 6차원 적대적 리뷰(44 에이전트): 19→14확정→fix-now 1(소비 태스크 수명/관측성) 근본 수정+회귀가드. deferred 12건은 핸드오프에. **최주목 deferred=크로스트랙 t0/poll-clock 정합**(video=프레임 ts, audio=누적 duration 각자 t0 → 트랙 시작 시차 시 nv·stt 오프셋; v1 동시시작 수용, Slice 9 실 브라우저로 **측정 후 결정**).
+  - ★ 6차원 적대적 리뷰(44 에이전트): 19→14확정→fix-now 1(소비 태스크 수명/관측성) 근본 수정+회귀가드. deferred 12건은 핸드오프에. **최주목 deferred=크로스트랙 t0/poll-clock 정합**(video=프레임 ts, audio=누적 duration 각자 t0 → 트랙 시작 시차 시 nv·stt 오프셋; v1 동시시작 수용, Slice 9에서 **측정 후 닫음**(아래).
+- **완료: Slice 9** — 라이브 e2e + 실 critic. 상세 → `.dev/handoffs/slice-09-live-critic.md`.
+  - 신규: `tests/test_e2e_live_critic.py`(게이트 1) — **독립 livekit-server:v1.8(dev, --network host)** + kor.mp4 publisher(사전 디코드 360x640 RGB24@10fps + 16k mono, realtime push) → **실 `WindowCritic`+`GemmaNativeTranscriber`**(vLLM E4B) → JSONL 종단. **src 무수정**(계측=테스트 레벨: `_ClockSink` emit시각 + `_InstWindower` 첫 add_* 시각). evidence `tests/evidence/live-critic.json`(판정)+`…raw.json`(수치).
+  - ★ **giljob-v2 스택은 OOM(Exit 137)으로 내려가 있었음** → 깨우지 않고 독립 livekit(통합 동일 v1.8)로 측정. dev 키 devkey/secret(통합 키 아님).
+  - 측정(PASS 2런, window 14·eval 2·turn_end 1 동일): **freshness lag** live median 0.76~0.99s/max 1.07(poll지연+추론, 3s cadence 충분) · **전사** kor.mp4 자기소개 verbatim 유지(★ **Opus 왕복**에도; ASR 오류=비결정적 음운 슬립) · **nv** engaged/neutral/nervous 구분(단 긴장류 그라운딩 불가=`[[vision-nonverbal-instability]]` 재확인) · **eot** turn_end(transcript_full+compact eval) OK.
+  - ★ **deferred #1 크로스트랙 t0 = 측정으로 닫음**: audio가 video보다 **~0.3s 선행**(LiveKit이 video 늦게 딜리버). 0.3s≪3s라 페어링 유효 → **v1 수용**(공유 wall-clock t0 도입 안 함). 재검토 트리거=윈도우<1.5s 또는 실 브라우저 skew>1s. 파일 publisher라 이 값은 하한(브라우저는 더 클 수 있음).
+  - **오프라인 93 무회귀**. 적대적 리뷰=인라인(측정 방법론 자기검증, 정정 버그 0). GPU 위생: 종료 시 `docker stop vllm-gemma4-e4b livekit-dev`+`nvidia-smi`.
 
 ## ★★ 통합 타깃 (모든 다음 슬라이스가 인지 — 메모리 `giljob-docker-integration-target`)
 이 레포는 최종적으로 **`github.com/GilJob-E/giljob-docker`의 `services/analysis-engine/`**로 통합된다.
@@ -50,24 +56,27 @@
 출력 소비자=`services/ai-engine`(Gemini, HTTP+JSON, internal). 컨테이너 규약(alpine→네이티브 시 slim
 협의·requirements.txt·/healthz·AGENTS+CLAUDE 쌍)은 메모리 참조.
 
-## 다음 할 일 = Slice 9: **라이브 e2e + 실 critic** (종단 레이턴시·전사 품질 evidence)
-> Slice 8까지 라이브 e2e는 **MockCritic**(LiveKit 전송·배선 검증 전용). Slice 9는 **실 vLLM**로 종단
-> 품질·지연을 측정한다. PLAN §6/§9 "실 vLLM 라이브" 항목 + Slice 8 deferred #1(크로스트랙 t0 측정).
+## 다음 할 일 = Slice 10: **통합 패키징** (services/analysis-engine 컨테이너화) — 또는 견고성 잔여
+> 핫패스(입력→비평+전사→JSON)는 Slice 9까지 **실 critic 라이브로 닫힘**. 남은 일은 통합 타깃으로의
+> 컨테이너 패키징 + 출력 소비자(ai-engine) 연결. 핵심 결정 일부는 api 팀 합의가 필요(아래 §미합의).
 
-1. 먼저 **`.dev/handoffs/slice-08-livekit-subscriber.md`**(★ deferred 목록·미합의·실 LiveKit 배선) +
-   `README.md`(STT 결정) + 메모리 `giljob-docker-integration-target`(로컬 `giljob-v2` 실행 중) 정독.
-2. **실 critic 배선**: `build_subscriber(WindowCritic(default_vllm_client()), [JSONLSink], config)` — Mock
-   대신 실 `analysis/critic.py`+`GemmaNativeTranscriber`. vLLM 기동(현재 미기동):
-   `bash /home/kio/workspace/gje/serving/vllm_e4b_audio.sh` → `client.health()` 게이트, down이면 skip(관례).
-3. **실 candidate 입력** 두 경로 중: (a) 로컬 `giljob-v2` 프론트(브라우저 getUserMedia publish)에 우리가
-   hidden subscriber로 붙기, (b) publisher가 **`kor.mp4`**(repo 루트, 한국어, gitignore — 없으면 skip)
-   미디어를 LiveKit에 push. 토큰: 인가 하 self-mint(Slice 8 방식) 또는 api 발급.
-4. **측정(evidence JSON, gje `.sisyphus`/`tests/evidence` 관례)**: 종단 레이턴시(영상 프레임→signal/
-   transcript emit), per-window 비언어 read 품질, 전사 품질(한국어 verbatim·환각), eot finalize.
-   ★ **deferred #1 크로스트랙 t0 측정**: 실 브라우저 publish에서 video/audio 첫 프레임 도착 시차를 재고
-   nv·stt 윈도우 정렬이 깨지는지 확인 → 필요하면 공유 wall-clock t0 도입(server→consumer 주입). **측정 후 결정**.
-5. (선택) 통합 준비: `services/analysis-engine` 컨테이너 규약(slim base·requirements.txt·/healthz·AGENTS+
-   CLAUDE 쌍·내부포트) — 메모리 `giljob-docker-integration-target`. vLLM 유휴 시 `docker stop`+`nvidia-smi`(GPU 위생).
+1. 먼저 **`.dev/handoffs/slice-09-live-critic.md`**(측정 방법론·deferred#1 결정·환경 기동법) +
+   `slice-08-livekit-subscriber.md`(deferred 목록·미합의) + 메모리 `giljob-docker-integration-target` 정독.
+2. **통합 패키징**: `services/analysis-engine/` 규약(메모리 참조) — slim base(alpine→네이티브 협의)·
+   `requirements.txt`(pyproject deps 추출)·`/healthz`·`AGENTS.md`+`CLAUDE.md` 쌍·내부포트. 진입점=
+   `server.app.build_subscriber(WindowCritic(default_vllm_client()), [JSONLSink, WebhookSink(ai-engine)], SubscriberConfig.from_env(...))` → `await sub.run(url, token)`.
+3. **출력 소비자 연결**: `services/ai-engine`(Gemini, HTTP+JSON, internal)로의 송출 = `WebhookSink` 추가
+   (PLAN §4 (c); 지금은 SSE+JSONL만). 실 URL/스키마 합의 후 `emit/sink.py`에 추가(per-window 비용·재시도·
+   순서 — emit는 models만 의존 유지).
+4. **api 팀 합의(미합의 잔여)**: hidden subscriber **토큰 발급 경로** — services/api가 발급(권장, 키 거기)
+   vs 우리 self-mint. 코드는 양쪽 지원(`resolve_token`). 룸 규약=`giljob-session-{id}` 확인.
+5. (선택) 견고성 deferred: slice-08 #4(멀티턴 시 executor `wait=True`/future cancel), #5(JSONLSink fd
+   누수), **노이즈/다화자 전사 재확인**(Slice 9는 단일 화자 스크립트 클립만). 실 브라우저 크로스트랙
+   skew 측정(>1s면 공유 t0 도입)은 giljob-v2 풀스택 필요 — deferred#1 재검토 트리거.
+
+> 환경 기동(라이브 재현): vLLM `bash /home/kio/workspace/gje/serving/vllm_e4b_audio.sh`(HF_TOKEN env) +
+> 독립 livekit `docker run -d --name livekit-dev --network host livekit/livekit-server:v1.8 --dev`.
+> **GPU 위생**: 작업 끝 `docker stop vllm-gemma4-e4b livekit-dev` + `nvidia-smi`로 VRAM 해제 확인.
 
 ## 불변 규칙 (매 슬라이스 공통)
 - src = 계층형 subpackage. import: **intra=relative / cross=absolute** (PLAN.md §1, 메모 `[[layered-src-structure]]`).

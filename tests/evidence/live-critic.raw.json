@@ -1,0 +1,314 @@
+{
+  "slice": 9,
+  "check": "e2e-live-critic (LiveKit subscribe → 실 WindowCritic+GemmaNativeTranscriber → JSONL)",
+  "model": "google/gemma-4-E4B-it",
+  "transport": "독립 livekit-server:v1.8 (dev, --network host, localhost ICE)",
+  "input": "kor.mp4 (publisher 360x640 RGB24 @10fps + 16k mono, realtime)",
+  "publish_media_dur_s": 38.27,
+  "params": {
+    "poll_interval": 0.5,
+    "eot_deadline_s": 8.0,
+    "nv_grid_s": 3.0
+  },
+  "counts": {
+    "window": 14,
+    "eval": 2,
+    "turn_end": 1
+  },
+  "latency_freshness_lag": {
+    "desc": "emit 시각 − (t0 + 윈도우 미디어구간 종료). poll지연(≤poll_interval) + critic 추론 포함.",
+    "live_windows": {
+      "n": 13,
+      "min": 0.634,
+      "median": 0.763,
+      "max": 0.842
+    },
+    "eot_flushed_windows": {
+      "n": 1,
+      "min": 1.213,
+      "median": 1.213,
+      "max": 1.213
+    }
+  },
+  "crosstrack_t0": {
+    "first_video_after_t0_s": 0.308,
+    "first_audio_after_t0_s": 0.01,
+    "skew_audio_minus_video_s": -0.298,
+    "note": "파일 publisher(두 트랙 동시 송출) → LiveKit 구독/네고 skew의 하한. 실 브라우저 getUserMedia는 디바이스 기동 skew가 더해져 더 클 수 있음."
+  },
+  "windows": [
+    {
+      "t": 1.5,
+      "window_s": 3.0,
+      "nonverbal": {
+        "state": "engaged",
+        "intensity": 0.6,
+        "note": "미소 유지, 시선 안정적, 자세 비교적 바른 편"
+      },
+      "transcript": "안녕하십니까? 지원자 이나래입니다. 저는",
+      "transcript_final": true,
+      "freshness_lag_s": 0.634,
+      "flushed_at_eot": false
+    },
+    {
+      "t": 4.5,
+      "window_s": 3.0,
+      "nonverbal": {
+        "state": "engaged",
+        "intensity": 0.6,
+        "note": "시선은 정면을 응시하고 있으며, 미소는 자연스럽지만 약간의 긴장감이 느껴짐"
+      },
+      "transcript": "그때 동기들에게 \"자먼 대체 언제 자냐는\"",
+      "transcript_final": true,
+      "freshness_lag_s": 0.763,
+      "flushed_at_eot": false
+    },
+    {
+      "t": 7.5,
+      "window_s": 3.0,
+      "nonverbal": {
+        "state": "engaged",
+        "intensity": 0.6,
+        "note": "시선은 카메라를 응시하고 있으나, 미세한 입술 떨림이 관찰됨"
+      },
+      "transcript": "이를 다들 들었습니다. 그 이유는 왕복 네 시간에",
+      "transcript_final": true,
+      "freshness_lag_s": 0.722,
+      "flushed_at_eot": false
+    },
+    {
+      "t": 10.5,
+      "window_s": 3.0,
+      "nonverbal": {
+        "state": "neutral",
+        "intensity": 0.3,
+        "note": "시선은 정면을 응시하나, 미세한 눈 깜빡임과 표정의 변화가 적어 다소 경직된 느낌"
+      },
+      "transcript": "아카는데도 주말 아르바이트에 한 번도 지각하지 않아.",
+      "transcript_final": true,
+      "freshness_lag_s": 0.842,
+      "flushed_at_eot": false
+    },
+    {
+      "t": 13.5,
+      "window_s": 3.0,
+      "nonverbal": {
+        "state": "neutral",
+        "intensity": 0.3,
+        "note": "시선은 정면을 응시하나, 미세한 눈 깜빡임과 입술의 긴장이 관찰됨"
+      },
+      "transcript": "고 상속 장학금도 계속 받았기 때문입니다. 이런데",
+      "transcript_final": true,
+      "freshness_lag_s": 0.754,
+      "flushed_at_eot": false
+    },
+    {
+      "t": 16.5,
+      "window_s": 3.0,
+      "nonverbal": {
+        "state": "nervous",
+        "intensity": 0.6,
+        "note": "시선이 불안정하게 움직이고, 미세한 표정 경직이 관찰됨"
+      },
+      "transcript": "그번에 공정계선 공무전에 나갔을 때는",
+      "transcript_final": true,
+      "freshness_lag_s": 0.749,
+      "flushed_at_eot": false
+    },
+    {
+      "t": 19.5,
+      "window_s": 3.0,
+      "nonverbal": {
+        "state": "nervous",
+        "intensity": 0.6,
+        "note": "시선이 불안정하게 움직이고, 미세한 입술 떨림이 관찰됨"
+      },
+      "transcript": "공정 속도를 46% 단축시키는 걸 성공",
+      "transcript_final": true,
+      "freshness_lag_s": 0.773,
+      "flushed_at_eot": false
+    },
+    {
+      "t": 22.5,
+      "window_s": 3.0,
+      "nonverbal": {
+        "state": "engaged",
+        "intensity": 0.6,
+        "note": "시선은 정면을 응시하고 있으나, 미세한 입술 떨림이 관찰됨"
+      },
+      "transcript": "했고 배상도 주장할 수 있었습니다. 현재 회사에서도",
+      "transcript_final": true,
+      "freshness_lag_s": 0.777,
+      "flushed_at_eot": false
+    },
+    {
+      "t": 25.5,
+      "window_s": 3.0,
+      "nonverbal": {
+        "state": "neutral",
+        "intensity": 0.3,
+        "note": "표정 변화가 거의 없고 시선이 정면을 응시하지만, 미세한 긴장감이 느껴짐"
+      },
+      "transcript": "신규 장비를 셋업할 때 50번 이상 파라미터",
+      "transcript_final": true,
+      "freshness_lag_s": 0.785,
+      "flushed_at_eot": false
+    },
+    {
+      "t": 28.5,
+      "window_s": 3.0,
+      "nonverbal": {
+        "state": "engaged",
+        "intensity": 0.6,
+        "note": "미소 유지, 시선 안정적, 자세 비교적 바름"
+      },
+      "transcript": "를 진행해서 공정 최적화에 도움을 줄 수 있었습니다.",
+      "transcript_final": true,
+      "freshness_lag_s": 0.67,
+      "flushed_at_eot": false
+    },
+    {
+      "t": 31.5,
+      "window_s": 3.0,
+      "nonverbal": {
+        "state": "engaged",
+        "intensity": 0.6,
+        "note": "시선은 정면을 응시하고 있으나, 미세한 입술 떨림이 관찰됨"
+      },
+      "transcript": "앞으로 SK 하이닉스에서도 차세대 메모리",
+      "transcript_final": true,
+      "freshness_lag_s": 0.805,
+      "flushed_at_eot": false
+    },
+    {
+      "t": 34.5,
+      "window_s": 3.0,
+      "nonverbal": {
+        "state": "nervous",
+        "intensity": 0.6,
+        "note": "시선이 불안정하게 흔들리고, 미세한 입술 떨림이 관찰됨"
+      },
+      "transcript": "매출적으로 양산하는데 기여하고 싶습니다. 감사합니다.",
+      "transcript_final": true,
+      "freshness_lag_s": 0.787,
+      "flushed_at_eot": false
+    },
+    {
+      "t": 37.5,
+      "window_s": 3.0,
+      "nonverbal": {
+        "state": "neutral",
+        "intensity": 0.3,
+        "note": "미소는 있으나 시선이 정면을 응시하지 않고 약간 아래를 향함"
+      },
+      "transcript": "아",
+      "transcript_final": true,
+      "freshness_lag_s": 0.72,
+      "flushed_at_eot": false
+    },
+    {
+      "t": 39.453383763553575,
+      "window_s": 0.9067675271071494,
+      "nonverbal": null,
+      "transcript": "",
+      "transcript_final": true,
+      "freshness_lag_s": 1.213,
+      "flushed_at_eot": true
+    }
+  ],
+  "evals": [
+    {
+      "t": 8.0,
+      "window_s": 16.0,
+      "eval": {
+        "window_start_s": 0.0,
+        "window_dur_s": 16.0,
+        "verbal": {
+          "logic": "논리적 흐름은 있으나, 자기소개라는 맥락에서 너무 사적인 경험에 치중하여 직무 역량과 연결 짓는 부분이 약합니다.",
+          "structure": "서론-본론-결론의 구조를 갖추려 했으나, 본론의 내용이 너무 일상적이고 산만합니다.",
+          "specificity": "구체적인 경험을 언급하지만, 그 경험이 지원하는 직무와 어떻게 연결되는지에 대한 설명이 매우 부족합니다."
+        },
+        "vocal": {
+          "volume": "적절한 편이나, 감정 표현이 다소 단조롭습니다.",
+          "pace": "전반적으로 안정적이지만, 중요한 내용을 강조할 때 속도가 빨라지는 경향이 있습니다.",
+          "pauses": "적절한 호흡과 쉼을 사용하고 있으나, 문장 간의 연결이 매끄럽지 못한 부분이 있습니다.",
+          "intonation": "전반적으로 평이한 톤으로, 자신감이나 열정이 잘 드러나지 않습니다."
+        },
+        "visual": {
+          "eye_contact": "카메라를 응시하려는 노력이 보이나, 시선 처리가 다소 불안정합니다.",
+          "posture": "정면을 향한 자세는 안정적이나, 어깨나 상체의 긴장이 느껴집니다.",
+          "expression": "미소는 유지하고 있으나, 표정 변화가 거의 없어 지루함을 유발합니다.",
+          "gesture_over_time": "손동작이 거의 없어 다소 정적이고 지루하게 느껴집니다."
+        },
+        "critique": [
+          "자기소개에서 너무 사적인 경험(동기들의 조언, 아르바이트, 장학금)에 집중하여 직무 역량이나 강점을 어필하지 못하고 있습니다.",
+          "전반적으로 감정 표현이 단조롭고, 자신감이나 열정이 부족하게 느껴집니다.",
+          "경험을 나열하는 데 그치고, 그 경험을 통해 무엇을 배웠고 어떻게 기여할 수 있는지에 대한 연결고리가 전혀 없습니다."
+        ],
+        "key_observations": [
+          "자기소개라는 목적에 비해 내용이 너무 일상적이고 산만합니다.",
+          "경험을 통해 얻은 교훈이나 직무 연관성을 설명하는 능력이 부족합니다.",
+          "표정이나 제스처 등 비언어적 요소에서 적극적인 에너지가 느껴지지 않습니다."
+        ],
+        "compact": false
+      }
+    },
+    {
+      "t": 24.0,
+      "window_s": 16.0,
+      "eval": {
+        "window_start_s": 16.0,
+        "window_dur_s": 16.0,
+        "verbal": {
+          "logic": "경험과 성과를 구체적인 수치로 제시하며 논리적으로 연결하려는 시도가 보이나, 문장 구조가 다소 딱딱하고 설명적입니다.",
+          "structure": "과거 경험(반도체 공정 속도 단축) -> 현재 경험(파라미터 테스트) -> 미래 기여(SK하이닉스 기여)의 흐름은 명확하나, 각 경험을 연결하는 전환이 매끄럽지 못합니다.",
+          "specificity": "수치(6%, 50번 이상)를 제시하여 구체성은 높으나, '성공했고', '도움을 줄 수 있었습니다'와 같은 추상적인 표현이 많아 임팩트가 약합니다."
+        },
+        "vocal": {
+          "volume": "적절한 볼륨을 유지하고 있으나, 전반적으로 힘이 부족하고 단조로운 느낌을 줍니다.",
+          "pace": "일정한 속도를 유지하려 노력하지만, 중요한 내용을 전달할 때 속도가 다소 빨라지는 경향이 있습니다.",
+          "pauses": "적절한 호흡과 쉼표 사용이 부족하여 문장이 이어지는 느낌이 강합니다.",
+          "intonation": "감정이나 강조가 부족하여, 내용 전달에만 치중한 듯한 무미건조한 톤입니다."
+        },
+        "visual": {
+          "eye_contact": "카메라를 응시하려는 노력이 보이나, 시선이 불안정하게 흔들리는 부분이 있습니다.",
+          "posture": "정면을 향한 자세는 안정적이나, 어깨나 상체의 긴장이 느껴집니다.",
+          "expression": "표정은 무난하나, 자신감이나 열정이 느껴지지 않는 다소 경직된 표정입니다.",
+          "gesture_over_time": "손동작이 거의 없어, 내용 전달에 시각적인 보조 장치가 부족합니다."
+        },
+        "critique": [
+          "성과를 나열하는 데 그치고, 그 성과를 통해 '무엇을 배웠고', '어떻게 기여할 것인지'에 대한 깊이 있는 해석이 부족합니다.",
+          "전반적으로 설명하는 듯한 톤이 강하여, 면접관에게 '나를 설득'하기보다는 '정보를 전달'하는 느낌을 줍니다.",
+          "수치 제시가 좋지만, 그 수치가 어떤 '문제'를 해결한 결과인지에 대한 맥락 설명이 부족하여 임팩트가 약합니다."
+        ],
+        "key_observations": [
+          "구체적인 수치 제시 능력은 높으나, 이를 스토리텔링으로 연결하는 능력이 부족합니다.",
+          "전달력 측면에서 감정적 몰입이나 자신감이 부족해 보입니다.",
+          "시각적 요소(제스처"
+        ],
+        "compact": false
+      }
+    }
+  ],
+  "turn_end": {
+    "transcript_full": "안녕하십니까? 지원자 이나래입니다. 저는 그때 동기들에게 \"자먼 대체 언제 자냐는\" 이를 다들 들었습니다. 그 이유는 왕복 네 시간에 아카는데도 주말 아르바이트에 한 번도 지각하지 않아. 고 상속 장학금도 계속 받았기 때문입니다. 이런데 그번에 공정계선 공무전에 나갔을 때는 공정 속도를 46% 단축시키는 걸 성공 했고 배상도 주장할 수 있었습니다. 현재 회사에서도 신규 장비를 셋업할 때 50번 이상 파라미터 를 진행해서 공정 최적화에 도움을 줄 수 있었습니다. 앞으로 SK 하이닉스에서도 차세대 메모리 매출적으로 양산하는데 기여하고 싶습니다. 감사합니다. 아",
+    "transcript_full_chars": 314,
+    "transcript_full_hangul": true,
+    "eval": {
+      "window_start_s": 16.0,
+      "window_dur_s": 23.90676752710715,
+      "verbal": {},
+      "vocal": {},
+      "visual": {},
+      "critique": [
+        "경험과 포부가 다소 추상적임",
+        "자신감 있는 태도와 어조가 부족함"
+      ],
+      "key_observations": [
+        "과거 경험을 바탕으로 SK하이닉스에서 메모리 양산에 기여하고 싶다는 포부를 밝히며 마무리했다."
+      ],
+      "compact": true
+    }
+  },
+  "verdict": "사람이 .json으로 큐레이션(루브릭 판정)"
+}
