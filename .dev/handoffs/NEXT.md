@@ -76,10 +76,19 @@
 출력 소비자=`services/ai-engine`(Gemini, HTTP+JSON, internal). 컨테이너 규약(alpine→네이티브 시 slim
 협의·requirements.txt·/healthz·AGENTS+CLAUDE 쌍)은 메모리 참조.
 
-## 다음 할 일 = Slice 11: **통합 계약 실 검증 — 그쪽 analysis-engine `ENABLE_SUBSCRIBER=true`** ⭐
+## ★ 북극성(사용자 명시 2026-06-05) = **MVP 완성 + PR**(`services/analysis-engine`) — 메모 `[[mvp-pr-north-star]]`
+> 모든 다음 슬라이스는 "완벽 검증"보다 **동작 MVP를 통합 레포에 PR**을 향한다. 통합이 앞서 있어(아래) 거리 짧음.
+
+## ★ 파킹: 실 사람-웹캠 경로(길 B) — 메모 `[[webcam-path-parked]]`
+> Slice 10 끝에 시도 → **실 웹캠 publish는 증명**(node_ip 고쳐 Tailscale로 VP8 1280x720 올라감), 전 전사 캡처만 미완(파킹).
+> ⚠ **스택 livekit `node_ip`가 아직 100.65.10.126(Tailscale IP)로 LIVE**(임시, hoddukzoa 다음 compose up시 자동 원복). 명시 원복:
+> `sudo bash -c 'cd /home/hoddukzoa/GilJob_v2/infra && docker compose --env-file /home/hoddukzoa/GilJob_v2/.env -f docker-compose.yml -f docker-compose.media.yml up -d --no-deps --force-recreate livekit'`
+> (node_ip=Tailscale는 원격 브라우저엔 좋지만 호스트/컨테이너 내부 클라이언트엔 불리 — 통합 전 정리 필요).
+
+## 다음 할 일 = Slice 11: **통합 계약 실 검증 — 그쪽 analysis-engine `ENABLE_SUBSCRIBER=true`** ⭐ (PR 최단경로)
 > ★ roadmap(`roadmap-browser-to-pr.md`)은 Slice 10 발견(통합 스택 전진)으로 **부분 superseded** — slice-10
 > 핸드오프 §"통합 스택 전진" + §"다음 슬라이스 후보"를 정본으로. 핫패스(입력→비평+전사→JSON)는 합성·실
-> critic·라이브·실 브라우저까지 **전부 닫혔다**. 남은 건 그쪽 계약 충족 + 실 통합 검증.
+> critic·라이브·실 브라우저까지 **전부 닫혔다**. 남은 건 그쪽 계약 충족 + 실 통합 검증 → 컨테이너 규약 → PR.
 
 1. 먼저 **`slice-10-browser-smoke.md`**(통합 스택 전진·계약·blocker 3종) + 메모리 `giljob-docker-integration-target` 정독.
 2. **환경 확인**: `docker ps`로 giljob-v2 스택 UP. analysis-engine-1(8200)이 **우리 레포 b769120(=현재 src 동일)**
