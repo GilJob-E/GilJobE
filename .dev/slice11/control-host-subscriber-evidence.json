@@ -1,0 +1,219 @@
+{
+  "slice": 10,
+  "check": "browser-live smoke (real browser getUserMedia→livekit publish → our subscriber)",
+  "mode": "live",
+  "room": "giljob-session-s11ctrl",
+  "browser_url": "http://localhost/interviews/s11ctrl/room",
+  "transport": "livekit @ws://localhost:7880 (keys: container(giljob-v2))",
+  "vllm_base_url": "http://localhost:8000",
+  "stop_reason": "sentinel",
+  "remote_participants": {
+    "candidate-s11ctrl": [
+      1,
+      2
+    ]
+  },
+  "counts": {
+    "window": 12,
+    "eval": 1,
+    "turn_end": 1
+  },
+  "latency_freshness_lag": {
+    "live_windows": {
+      "n": 11,
+      "min": 0.931,
+      "median": 1.063,
+      "max": 1.116
+    },
+    "eot_flushed_windows": {
+      "n": 1,
+      "min": 0.965,
+      "median": 0.965,
+      "max": 0.965
+    }
+  },
+  "crosstrack_t0": {
+    "first_video_after_t0_s": 0.196,
+    "first_audio_after_t0_s": 0.005,
+    "skew_audio_minus_video_s": -0.192,
+    "note": "실 브라우저: 카메라/마이크 토글이 별개 UI 액션이라 첫 도착 skew는 디바이스-동기 skew가 아니라 사용자 토글 간격을 반영할 수 있음. 양 트랙 라이브 후 per-window nv+transcript 페어링이 실측 관심사."
+  },
+  "windows": [
+    {
+      "t": 1.5,
+      "window_s": 3.0,
+      "nonverbal": {
+        "state": "neutral",
+        "intensity": 0.3,
+        "note": "시선은 정면을 응시하나, 미세한 표정 변화나 자세의 긴장감이 관찰되지 않음"
+      },
+      "transcript": "안녕하세요. 지원자 이나래입니다. 저는",
+      "transcript_final": true,
+      "freshness_lag_s": 1.022,
+      "flushed_at_eot": false
+    },
+    {
+      "t": 4.5,
+      "window_s": 3.0,
+      "nonverbal": {
+        "state": "engaged",
+        "intensity": 0.6,
+        "note": "시선은 정면을 응시하고 있으며, 미소는 자연스럽지만 약간의 긴장감이 느껴짐"
+      },
+      "transcript": "그때 동기들에게 \"자만 대체 언제 자냐는\"",
+      "transcript_final": true,
+      "freshness_lag_s": 1.034,
+      "flushed_at_eot": false
+    },
+    {
+      "t": 7.5,
+      "window_s": 3.0,
+      "nonverbal": {
+        "state": "neutral",
+        "intensity": 0.3,
+        "note": "표정 변화가 거의 없고 시선이 정면을 응시하지만, 미세한 긴장감이 느껴짐"
+      },
+      "transcript": "를 자주 들었습니다. 그 이유는 왕복 네 시간에",
+      "transcript_final": true,
+      "freshness_lag_s": 1.024,
+      "flushed_at_eot": false
+    },
+    {
+      "t": 10.5,
+      "window_s": 3.0,
+      "nonverbal": {
+        "state": "nervous",
+        "intensity": 0.6,
+        "note": "말을 시작할 때 미세한 목소리 떨림과 시선 처리의 불안정함이 관찰됨"
+      },
+      "transcript": "아까운데도 주말 아르바이트에 한 번도 지각하지 않아.",
+      "transcript_final": true,
+      "freshness_lag_s": 1.063,
+      "flushed_at_eot": false
+    },
+    {
+      "t": 13.5,
+      "window_s": 3.0,
+      "nonverbal": {
+        "state": "neutral",
+        "intensity": 0.3,
+        "note": "표정 변화가 거의 없고 시선이 정면을 응시함"
+      },
+      "transcript": "어, 상속 장학금도 계속 받았기 때문입니다. 이런 태도",
+      "transcript_final": true,
+      "freshness_lag_s": 0.931,
+      "flushed_at_eot": false
+    },
+    {
+      "t": 16.5,
+      "window_s": 3.0,
+      "nonverbal": {
+        "state": "neutral",
+        "intensity": 0.3,
+        "note": "표정 변화가 거의 없고 시선이 정면을 응시하고 있으나, 미세한 긴장감이 느껴짐"
+      },
+      "transcript": "그때 공정계산 공무전에 나갔을 때는",
+      "transcript_final": true,
+      "freshness_lag_s": 1.116,
+      "flushed_at_eot": false
+    },
+    {
+      "t": 19.5,
+      "window_s": 3.0,
+      "nonverbal": {
+        "state": "neutral",
+        "intensity": 0.3,
+        "note": "시선은 정면을 응시하나, 미세한 눈 깜빡임과 입술의 긴장이 관찰됨"
+      },
+      "transcript": "운동 속도를 자신 6% 감속시키는 걸 선호합니다.",
+      "transcript_final": true,
+      "freshness_lag_s": 1.096,
+      "flushed_at_eot": false
+    },
+    {
+      "t": 22.5,
+      "window_s": 3.0,
+      "nonverbal": {
+        "state": "engaged",
+        "intensity": 0.6,
+        "note": "시선은 정면을 응시하고 있으나, 미세한 입술 떨림이 관찰됨"
+      },
+      "transcript": "했고 배상도 주장할 수 있었습니다. 현재 회사에서도",
+      "transcript_final": true,
+      "freshness_lag_s": 1.022,
+      "flushed_at_eot": false
+    },
+    {
+      "t": 25.5,
+      "window_s": 3.0,
+      "nonverbal": {
+        "state": "neutral",
+        "intensity": 0.3,
+        "note": "표정 변화가 거의 없고 시선이 정면을 응시하지만, 미세한 긴장감이 느껴짐"
+      },
+      "transcript": "신규 장비를 셋업할 때 50번 이상 파라미터 테스트.",
+      "transcript_final": true,
+      "freshness_lag_s": 1.091,
+      "flushed_at_eot": false
+    },
+    {
+      "t": 28.5,
+      "window_s": 3.0,
+      "nonverbal": {
+        "state": "engaged",
+        "intensity": 0.6,
+        "note": "시선은 정면을 응시하고 있으나, 미세한 입꼬리 떨림이 관찰됨"
+      },
+      "transcript": "를 진행해서 공정 최적화에 도움을 줄 수 있었습니다.",
+      "transcript_final": true,
+      "freshness_lag_s": 1.069,
+      "flushed_at_eot": false
+    },
+    {
+      "t": 31.5,
+      "window_s": 3.0,
+      "nonverbal": {
+        "state": "engaged",
+        "intensity": 0.6,
+        "note": "시선은 정면을 응시하고 있으나, 미세한 입술 떨림이 관찰됨"
+      },
+      "transcript": "앞으로 SK 하이닉스에서도 차세대 메모리 제",
+      "transcript_final": true,
+      "freshness_lag_s": 1.107,
+      "flushed_at_eot": false
+    },
+    {
+      "t": 34.188723809085786,
+      "window_s": 2.3774476181715727,
+      "nonverbal": {
+        "state": "nervous",
+        "intensity": 0.6,
+        "note": "시선이 불안정하게 흔들리고, 미세한 입술 떨림이 관찰됨"
+      },
+      "transcript": "매 효율적으로 양산하는 데 기여하고 싶습니다.",
+      "transcript_final": true,
+      "freshness_lag_s": 0.965,
+      "flushed_at_eot": true
+    }
+  ],
+  "turn_end": {
+    "transcript_full": "안녕하세요. 지원자 이나래입니다. 저는 그때 동기들에게 \"자만 대체 언제 자냐는\" 를 자주 들었습니다. 그 이유는 왕복 네 시간에 아까운데도 주말 아르바이트에 한 번도 지각하지 않아. 어, 상속 장학금도 계속 받았기 때문입니다. 이런 태도 그때 공정계산 공무전에 나갔을 때는 운동 속도를 자신 6% 감속시키는 걸 선호합니다. 했고 배상도 주장할 수 있었습니다. 현재 회사에서도 신규 장비를 셋업할 때 50번 이상 파라미터 테스트. 를 진행해서 공정 최적화에 도움을 줄 수 있었습니다. 앞으로 SK 하이닉스에서도 차세대 메모리 제 매 효율적으로 양산하는 데 기여하고 싶습니다.",
+    "transcript_full_hangul": true,
+    "eval": {
+      "window_start_s": 16.0,
+      "window_dur_s": 19.377447618171573,
+      "verbal": {},
+      "vocal": {},
+      "visual": {},
+      "critique": [
+        "경험 나열에 그침",
+        "구체적인 기여 방안 부족"
+      ],
+      "key_observations": [
+        "반도체 공정 최적화 경험을 바탕으로 SK하이닉스에 기여하고 싶다는 포부를 밝힘."
+      ],
+      "compact": true
+    }
+  },
+  "verdict": "사람이 .json으로 큐레이션(루브릭 판정)"
+}

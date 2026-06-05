@@ -1,0 +1,237 @@
+{
+  "sessionId": "slice11run",
+  "snapshots": [
+    {
+      "elapsed": 5.0,
+      "summary": "records=0 kinds={} transcriptFull[0자]=''",
+      "recordCount": 0,
+      "transcriptFull": ""
+    },
+    {
+      "elapsed": 10.0,
+      "summary": "records=0 kinds={} transcriptFull[0자]=''",
+      "recordCount": 0,
+      "transcriptFull": ""
+    },
+    {
+      "elapsed": 15.0,
+      "summary": "records=0 kinds={} transcriptFull[0자]=''",
+      "recordCount": 0,
+      "transcriptFull": ""
+    },
+    {
+      "elapsed": 20.0,
+      "summary": "records=0 kinds={} transcriptFull[0자]=''",
+      "recordCount": 0,
+      "transcriptFull": ""
+    },
+    {
+      "elapsed": 25.0,
+      "summary": "records=0 kinds={} transcriptFull[0자]=''",
+      "recordCount": 0,
+      "transcriptFull": ""
+    },
+    {
+      "elapsed": 30.0,
+      "summary": "records=0 kinds={} transcriptFull[0자]=''",
+      "recordCount": 0,
+      "transcriptFull": ""
+    },
+    {
+      "elapsed": 35.0,
+      "summary": "records=0 kinds={} transcriptFull[0자]=''",
+      "recordCount": 0,
+      "transcriptFull": ""
+    },
+    {
+      "elapsed": 40.0,
+      "summary": "records=12 kinds={'?': 12} transcriptFull[0자]=''",
+      "recordCount": 12,
+      "transcriptFull": ""
+    },
+    {
+      "elapsed": 45.1,
+      "summary": "records=12 kinds={'?': 12} transcriptFull[0자]=''",
+      "recordCount": 12,
+      "transcriptFull": ""
+    },
+    {
+      "elapsed": 50.1,
+      "summary": "records=12 kinds={'?': 12} transcriptFull[0자]=''",
+      "recordCount": 12,
+      "transcriptFull": ""
+    }
+  ],
+  "stopResp": {
+    "status": "stopped"
+  },
+  "final": {
+    "latestTurnEnd": {
+      "eval": null,
+      "session_id": "slice11run",
+      "t": 31.689323768951,
+      "transcript_full": "",
+      "type": "turn_end"
+    },
+    "rawMediaExposed": false,
+    "rawSecretsExposed": false,
+    "recordCount": 12,
+    "records": [
+      {
+        "nonverbal": {
+          "intensity": 0.6,
+          "note": "미소 유지, 시선은 카메라를 향하고 있으나 미세한 눈 깜빡임 관찰됨",
+          "state": "engaged"
+        },
+        "session_id": "slice11run",
+        "t": 1.5,
+        "transcript": "",
+        "transcript_final": false,
+        "type": "window",
+        "window_s": 3.0
+      },
+      {
+        "nonverbal": {
+          "intensity": 0.3,
+          "note": "표정 변화가 거의 없고, 시선은 정면을 응시하나 미세한 경직감이 관찰됨.",
+          "state": "neutral"
+        },
+        "session_id": "slice11run",
+        "t": 4.5,
+        "transcript": "",
+        "transcript_final": false,
+        "type": "window",
+        "window_s": 3.0
+      },
+      {
+        "nonverbal": {
+          "intensity": 0.3,
+          "note": "표정 변화가 크지 않고, 시선은 정면을 응시하나 미세한 경직감이 관찰됨.",
+          "state": "neutral"
+        },
+        "session_id": "slice11run",
+        "t": 7.5,
+        "transcript": "",
+        "transcript_final": false,
+        "type": "window",
+        "window_s": 3.0
+      },
+      {
+        "nonverbal": {
+          "intensity": 0.3,
+          "note": "시선이 정면을 응시하고 있으나, 미세한 눈 깜빡임과 입술 움직임에서 약간의 경직감이 관찰됨.",
+          "state": "neutral"
+        },
+        "session_id": "slice11run",
+        "t": 10.5,
+        "transcript": "",
+        "transcript_final": false,
+        "type": "window",
+        "window_s": 3.0
+      },
+      {
+        "nonverbal": {
+          "intensity": 0.3,
+          "note": "표정 변화가 거의 없고, 시선은 정면을 응시하나 미세한 경직감이 관찰됨.",
+          "state": "neutral"
+        },
+        "session_id": "slice11run",
+        "t": 13.5,
+        "transcript": "",
+        "transcript_final": false,
+        "type": "window",
+        "window_s": 3.0
+      },
+      {
+        "nonverbal": {
+          "intensity": 0.6,
+          "note": "미소는 자연스러우나, 시선이 카메라를 응시하는 강도가 약간 불안정함.",
+          "state": "engaged"
+        },
+        "session_id": "slice11run",
+        "t": 16.5,
+        "transcript": "",
+        "transcript_final": false,
+        "type": "window",
+        "window_s": 3.0
+      },
+      {
+        "nonverbal": {
+          "intensity": 0.3,
+          "note": "시선이 정면을 응시하고 있으나, 표정 변화가 거의 없어 중립적임.",
+          "state": "neutral"
+        },
+        "session_id": "slice11run",
+        "t": 19.5,
+        "transcript": "",
+        "transcript_final": false,
+        "type": "window",
+        "window_s": 3.0
+      },
+      {
+        "nonverbal": {
+          "intensity": 0.6,
+          "note": "00:02에서 눈을 감고 고개를 숙이는 등 불안정하고 경직된 모습 포착",
+          "state": "nervous"
+        },
+        "session_id": "slice11run",
+        "t": 22.5,
+        "transcript": "",
+        "transcript_final": false,
+        "type": "window",
+        "window_s": 3.0
+      },
+      {
+        "nonverbal": {
+          "intensity": 0.3,
+          "note": "표정 변화가 거의 없고 시선은 정면을 응시하나, 미세한 경직감이 관찰됨.",
+          "state": "neutral"
+        },
+        "session_id": "slice11run",
+        "t": 25.5,
+        "transcript": "",
+        "transcript_final": false,
+        "type": "window",
+        "window_s": 3.0
+      },
+      {
+        "nonverbal": {
+          "intensity": 0.3,
+          "note": "표정 변화가 크지 않고, 시선은 정면을 응시하나 미세한 경직감이 관찰됨.",
+          "state": "neutral"
+        },
+        "session_id": "slice11run",
+        "t": 28.5,
+        "transcript": "",
+        "transcript_final": false,
+        "type": "window",
+        "window_s": 3.0
+      },
+      {
+        "nonverbal": {
+          "intensity": 0.3,
+          "note": "시선은 정면을 응시하나, 미세한 눈 깜빡임이 잦고 표정 변화가 거의 없어 긴장감이 약간 느껴짐",
+          "state": "neutral"
+        },
+        "session_id": "slice11run",
+        "t": 30.8446618844755,
+        "transcript": "",
+        "transcript_final": false,
+        "type": "window",
+        "window_s": 1.6893237689509988
+      },
+      {
+        "eval": null,
+        "session_id": "slice11run",
+        "t": 31.689323768951,
+        "transcript_full": "",
+        "type": "turn_end"
+      }
+    ],
+    "service": "analysis-engine",
+    "sessionId": "slice11run",
+    "transcriptFull": "",
+    "windowTranscripts": []
+  },
+  "pubTail": "[drive] session room=giljob-session-slice11run url=ws://127.0.0.1:7880 (token hidden)\n[drive] chrome 헤드리스 기동(pid=1785135), CDP :9222\n[drive] pub state = publishing\n   [page] log: [pub] publishing (setCamera/Mic Enabled = fake device getUserMedia)…\n   [page] info: publishing track {room: giljob-session-slice11run, roomID: RM_QbWRZ6xDjr6w, participant: candidate-slice11run, pID: PA_9ksYX3Vc6x9s, trackID: undefined}\n   [page] info: publishing track {room: giljob-session-slice11run, roomID: RM_QbWRZ6xDjr6w, participant: candidate-slice11run, pID: PA_9ksYX3Vc6x9s, trackID: undefined}\n   [page] log: [pub] PUBLISHING ok — room=giljob-session-slice11run tracks=2 identity=candidate-slice11run\n   [page] warning: could not reliably determine default device\n[drive] 42s 유지 — 우리 subscriber가 캡처 중…\n[drive] hold 종료 → sentinel touch(/tmp/giljobe_smoke_stop). final state=publishing  room=giljob-session-slice11run\n"
+}

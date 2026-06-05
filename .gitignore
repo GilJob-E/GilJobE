@@ -47,3 +47,6 @@ out/
 /.dev/slice10/*.mjs
 /.dev/slice10/*.jsonl
 /.dev/slice10/*.log
+
+# Slice 11+12 검증 하먼스(.dev/slice11/) — 런타임 로그만 제외. evidence JSON·하먼스 .py는 커밋(재현용).
+/.dev/slice11/*.log

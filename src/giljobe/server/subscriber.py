@@ -132,7 +132,11 @@ class LiveKitSubscriber:
             await self.aclose()
 
     async def aclose(self, now: float | None = None) -> None:
-        """턴 종료 flush(end_turn) + 태스크/룸 정리. 멱등(중복 호출 안전)."""
+        """턴 종료 flush(end_turn) + 태스크/룸 정리. 멱등(중복 호출 안전).
+
+        ★ windower.close()(소유 executor shutdown) + 소비 태스크 cancel + room disconnect는 end_turn/
+        _flush_queue가 예외나 **취소**(클라이언트가 /subscriber/stop 도중 끊김 등)로 끊겨도 반드시 실행한다
+        — 안 그러면 매 턴 7개 스레드풀이 영구 누수(적대리뷰 확정). 동기 close()를 finally 첫 줄에 둔다."""
         if not self._started:
             return
         self._started = False
@@ -141,24 +145,27 @@ class LiveKitSubscriber:
         # poll 먼저 멈춘다(더는 새 윈도우 제출 안 함).
         if self._poll_task is not None:
             self._poll_task.cancel()
-        # 턴 종료는 executor에서 — end_turn은 nv/stt/tail future를 기다리며(블로킹) trailing window
-        # 신호 + turn_end를 emit한다. 그동안 드레인 루프가 루프 스레드에서 그 신호들을 recorder로 흘림.
-        if self._loop is not None:
-            try:
-                await self._loop.run_in_executor(None, self.windower.end_turn, now)
-            except Exception:  # noqa: BLE001 - 종료 경로: end_turn 실패해도 정리는 계속(가시성 위해 로깅)
-                logger.exception("aclose: end_turn 실패")
-        # 드레인 루프를 멈추고, 남은 신호(turn_end 등)를 동기로 마저 비운다.
-        if self._drain_task is not None:
-            self._drain_task.cancel()
-        await self._flush_queue()
-        self.windower.close()  # _closed 가드 → 뒤늦은 풀평가 emit no-op(안전)
-        # 스냅샷 후 비우고 취소 — 종료 중 _on_track은 _started 가드로 막혀 새 태스크가 안 끼어든다.
-        consume_tasks = list(self._consume_tasks)
-        self._consume_tasks.clear()
-        for t in consume_tasks:
-            t.cancel()
-        await self._disconnect_room()
+        try:
+            # 턴 종료는 executor에서 — end_turn은 nv/stt/tail future를 기다리며(블로킹) trailing window
+            # 신호 + turn_end를 emit한다. 그동안 드레인 루프가 루프 스레드에서 그 신호들을 recorder로 흘림.
+            if self._loop is not None:
+                try:
+                    await self._loop.run_in_executor(None, self.windower.end_turn, now)
+                except Exception:  # noqa: BLE001 - 종료 경로: end_turn 실패해도 정리는 계속(가시성 위해 로깅)
+                    logger.exception("aclose: end_turn 실패")
+            # 드레인 루프를 멈추고, 남은 신호(turn_end 등)를 동기로 마저 비운다.
+            if self._drain_task is not None:
+                self._drain_task.cancel()
+            await self._flush_queue()
+        finally:
+            # ★ 동기 close()를 finally 첫 줄에 — 위가 예외·취소로 끊겨도 소유 executor를 반드시 shutdown.
+            self.windower.close()  # _closed 가드 → 뒤늦은 풀평가 emit no-op(안전), 멱등
+            # 스냅샷 후 비우고 취소 — 종료 중 _on_track은 _started 가드로 막혀 새 태스크가 안 끼어든다.
+            consume_tasks = list(self._consume_tasks)
+            self._consume_tasks.clear()
+            for t in consume_tasks:
+                t.cancel()
+            await self._disconnect_room()
 
     # ── 트랙 구독·디스패치 ──
     def _register_handlers(self) -> None:

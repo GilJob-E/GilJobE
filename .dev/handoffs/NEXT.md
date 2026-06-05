@@ -3,7 +3,7 @@
 > SessionStart 훅이 이 파일을 가리킨다. **매 슬라이스 종료 시 이 파일을 다음 슬라이스로 갱신**한다.
 > 규칙: `CLAUDE.md` "세션 시작 프로토콜". 전체 빌드 순서: `PLAN.md §7`.
 
-## 지금 상태 (최근 갱신: Slice 9 완료 시점)
+## 지금 상태 (최근 갱신: Slice 12 완료 시점)
 - **완료: Slice 1** — 스캐폴드 + gje 4모듈 verbatim 복사 + 계층형 src. 상세 → `.dev/handoffs/slice-01-scaffold.md`.
 - **완료: Slice 2** — ★ STT 필요성 스파이크 **PASS**. 상세 → `.dev/handoffs/slice-02-stt-spike.md`.
   - **결정: `GemmaNativeTranscriber` 기본 STT, faster-whisper 안 붙임**(VRAM 추가 0). 정본 evidence: `tests/evidence/spike-transcribe.json`.
@@ -67,6 +67,18 @@
   - ★ ultracode 적대 검증(워크플로 4 검증자): browser-path·stack-findings HOLDS, measurements·completeness는
     NUANCED → **클린 재실행으로 해소**(turn_end.eval=None=타이밍 아티팩트 확정, 크로스트랙 confound 제거).
 
+- **완료: Slice 11+12** — 통합 계약 실검증 + **우리 HTTP 서버(PR 본체)**. 상세 → `.dev/handoffs/slice-11-12-verify-and-server.md`.
+  - **Slice 11(검증)**: 그쪽 analysis-engine을 **무플립**(ENABLE_SUBSCRIBER가 auto-start만 게이트 — start는 flag=false에도 동작)으로
+    라이브 구동 → 계약 구조적 OK·node_ip=Tailscale는 in-container 무해(영상/nv 동작)이나 **전사 전부 빔 + 발행중 records=0 +
+    turn_end.eval null + "Event loop is closed" 폭주**. ★ **대조군**(우리 host subscriber, 같은 스택)으로 **321자 verbatim 전사** →
+    빈 전사는 **우리 코드 아님, 그쪽 자작 wrapper(`/app/server.py`) 귀속**으로 격리(=ENABLE_SUBSCRIBER=false 이유 실증).
+  - **Slice 12(서버)**: 신규 `src/giljobe/server/`(`service.py`=AnalysisService+MemorySink+signals_payload, `http_app.py`=aiohttp 라우트,
+    `__main__.py`=`python -m giljobe.server` 엔트리). **단일 영속 aiohttp 루프**로 wrapper 버그 4종 구조 제거. `subscriber.py` aclose()
+    finally 보장 수정. **오프라인 108 passed**(기존 93 + HTTP 15) + **라이브 전 루프 PASS**(우리 서버 host 8201→스택, 발행중 전사
+    실시간·window 11/11·transcriptFull 281자·eval 채움·"Event loop is closed" 0). evidence `.dev/slice11/our-server-live.json`.
+  - ★ ultracode 적대리뷰(14에이전트/713k): **6확정/4기각** → 누수·경합·계약 5건 수정(connect실패 누수·동시start TOCTOU·aclose
+    executor누수·_last마스킹·stop500) + 회귀가드 4. 전부 실패/엣지 경로(happy-path는 라이브 PASS).
+
 ## ★★ 통합 타깃 (모든 다음 슬라이스가 인지 — 메모리 `giljob-docker-integration-target`)
 이 레포는 최종적으로 **`github.com/GilJob-E/giljob-docker`의 `services/analysis-engine/`**로 통합된다.
 입력 모델이 PLAN과 다름: aiortc 직접 수신이 아니라 **LiveKit room subscribe**. **그쪽 프론트(`apps/web`)는
@@ -85,26 +97,23 @@
 > `sudo bash -c 'cd /home/hoddukzoa/GilJob_v2/infra && docker compose --env-file /home/hoddukzoa/GilJob_v2/.env -f docker-compose.yml -f docker-compose.media.yml up -d --no-deps --force-recreate livekit'`
 > (node_ip=Tailscale는 원격 브라우저엔 좋지만 호스트/컨테이너 내부 클라이언트엔 불리 — 통합 전 정리 필요).
 
-## 다음 할 일 = Slice 11: **통합 계약 실 검증 — 그쪽 analysis-engine `ENABLE_SUBSCRIBER=true`** ⭐ (PR 최단경로)
-> ★ roadmap(`roadmap-browser-to-pr.md`)은 Slice 10 발견(통합 스택 전진)으로 **부분 superseded** — slice-10
-> 핸드오프 §"통합 스택 전진" + §"다음 슬라이스 후보"를 정본으로. 핫패스(입력→비평+전사→JSON)는 합성·실
-> critic·라이브·실 브라우저까지 **전부 닫혔다**. 남은 건 그쪽 계약 충족 + 실 통합 검증 → 컨테이너 규약 → PR.
+## 다음 할 일 = Slice 13: **컨테이너 패키징 + PR** ⭐ (북극성 마감 — 메모 `[[mvp-pr-north-star]]`)
+> 핫패스+계약+**우리 서버(PR 본체)**까지 전부 닫혔다(Slice 11+12). 남은 건 패키징 + PR + 그쪽 조율.
+> 먼저 **`slice-11-12-verify-and-server.md`** + 메모리 `giljob-docker-integration-target` 정독.
 
-1. 먼저 **`slice-10-browser-smoke.md`**(통합 스택 전진·계약·blocker 3종) + 메모리 `giljob-docker-integration-target` 정독.
-2. **환경 확인**: `docker ps`로 giljob-v2 스택 UP. analysis-engine-1(8200)이 **우리 레포 b769120(=현재 src 동일)**
-   를 클론해 실행 중이나 `ANALYSIS_ENGINE_ENABLE_SUBSCRIBER=false`. **우리 vLLM/livekit 따로 안 띄움**(스택 공유).
-3. **실 통합 검증**(핵심): 그쪽 `ENABLE_SUBSCRIBER=true`로 켜고(그쪽 env/이유 조율 필요 — 왜 꺼뒀나) **전 루프**
-   확인 — 브라우저 publish → 그쪽 analysis-engine이 우리 subscriber 띄움 → `GET /analysis/signals`에 우리
-   transcript/nv → 프론트가 `/ai/interview/next-question`에 중계. (계약: `/analysis/subscriber/start|stop`·`/analysis/signals`,
-   룸 `giljob-session-{sessionId}`, POST /api/sessions가 sessionId 존중.)
-4. **그쪽에 blocker 보고**(코드보다 먼저): (a) 번들 SDK livekit-client 2.19.1 ↔ 서버 1.8.4 비호환(/rtc/v1 404 churn —
-   그쪽 프론트 publish도 영향), (b) ai-engine Gemini 크레딧 소진(429), (c) LiveKit node_ip=127.0.0.1·use_external_ip=false
-   (원격 브라우저 ICE 실패 — external IP/TURN 또는 ICE-TCP).
-5. (부수) 사람 웹캠(길 B): 터널 7881(ICE-TCP) 추가 또는 스택 node_ip=Tailscale IP 후 재시도. / 스모크 하먼스
-   (`.dev/slice10/`)를 tests/ 게이트 e2e로 승격 검토.
+1. **컨테이너 패키징**(메모 컨테이너 규약): `Dockerfile`(python:3.12-**slim** + ffmpeg/livekit FFI — alpine 불가, base 예외
+   ADR감) · `requirements.txt`(pyproject deps→pip 변환) · `/healthz`·`/readyz`(이미 구현됨) · **모든 디렉터리 `AGENTS.md`+
+   `CLAUDE.md` 쌍**(그쪽 `tests/contract/test_agent_docs_contract.py` DOC_PAIRS 강제, 영어, "Read the local AGENTS.md first").
+2. **PR**(`github.com/GilJob-E/GilJobE` → `GilJob_v2`/`services/analysis-engine`): 통합 CMD를 **`python -m giljobe.server`**(우리
+   엔트리)로 채택해 그쪽 자작 wrapper 대체 + compose `depends_on: gemma-e4b`·`VLLM_BASE_URL`/`LIVEKIT_*` 주입. PR 메커닉은
+   레포가 hoddukzoa 홈이라 조율.
+3. **그쪽 조율/blocker 보고**: (a) **우리 서버 엔트리로 CMD 교체**(자작 wrapper가 전사 못 냄 — Slice 11 실증) · (b) 스택
+   blocker — 번들 SDK 2.19.1↔서버 1.8.4 비호환(/rtc/v1 404), ai-engine Gemini 크레딧 소진(429), node_ip(컨테이너내부 vs 원격 양립).
+4. (부수) `.dev/slice11/verify_our_server.py`를 tests/ 게이트 e2e로 승격 · 실 사람-웹캠(`[[webcam-path-parked]]`).
 
-> 환경: 스택 **현재 UP**. **우리 vLLM/livekit-dev 띄우지 말 것**(스택 gemma-e4b 8000·livekit 7880 공유). GPU
-> 위생: 스택 gemma-e4b가 GPU 사용 중(정상, 스택 소유 — 우리가 정리할 컨테이너 없음).
+> 환경: 스택 **현재 UP**. **우리 vLLM/livekit 띄우지 말 것**(스택 gemma-e4b 8000·livekit 7880 공유). 라이브 검증은 우리 서버를
+> host 8201로 띄워 스택에 붙이는 패턴(`.dev/slice11/verify_our_server.py`, 키는 api 컨테이너서 읽음). ⚠ livekit node_ip=Tailscale
+> 잔여 LIVE(in-container 무해 확인됨, 통합 전 정리 — `[[webcam-path-parked]]`). ENABLE_SUBSCRIBER는 **플립 안 함**(불필요).
 
 ## 불변 규칙 (매 슬라이스 공통)
 - src = 계층형 subpackage. import: **intra=relative / cross=absolute** (PLAN.md §1, 메모 `[[layered-src-structure]]`).

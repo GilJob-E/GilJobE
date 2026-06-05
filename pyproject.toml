@@ -12,14 +12,15 @@ dependencies = [
   "livekit~=1.1",      # LiveKit RTC — 통합 타깃 입력 어댑터(hidden 구독자, server). manylinux
                        #   바이너리 wheel(Rust FFI) → 컨테이너 glibc(slim) 베이스 확정(alpine 불가)
   "livekit-api~=1.1",  # LiveKit 토큰 발급(self-mint hidden subscriber 토큰; aiohttp/pyjwt 동반)
+  "aiohttp",           # HTTP 서버(server/http_app) — 통합 계약 /subscriber/start|stop·/signals·/healthz
 ]
 
 [project.optional-dependencies]
 test = ["pytest"]
 whisper = ["faster-whisper"]  # STT 폴백 (스파이크 FAIL 시에만)
 
-# SSE/aiohttp HTTP 서빙은 통합 타깃에선 안 쓰여 연기(피벗) — 출력은 JSONL(+추후 ai-engine WebhookSink).
-# (aiohttp는 livekit-api 전이 의존으로 이미 설치됨 — 직접 import 시에만 명시 의존 추가.)
+# Slice 12: HTTP 서버(server/)가 통합 계약(/subscriber/start|stop·/signals·/healthz)을 직접 서빙 →
+# aiohttp를 명시 의존으로 승격(위). 출력은 /signals 폴링(통합 프론트) + JSONL(감사/리플레이).
 
 [tool.pytest.ini_options]
 pythonpath = ["src"]
