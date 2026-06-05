@@ -1,0 +1,49 @@
+{
+  "slice": 10,
+  "check": "실 브라우저 e2e 스모크 — 진짜 헤드리스 Chrome getUserMedia(가짜장치) → livekit-client SDK → LiveKit publish → 우리 hidden LiveKitSubscriber(실 WindowCritic+GemmaNativeTranscriber) → JSONL",
+  "verdict": "PASS (2회 재현). Slice 9 합성 publisher가 우회한 #1 갭(브라우저 getUserMedia→livekit-client 인코딩→publish)을 실 브라우저 미디어 파이프라인으로 닫음.",
+  "date": "2026-06-05",
+  "how": {
+    "경로": "사용자 결정 = 길 A(독립: 우리 subscriber + 그쪽 스택). 원격 사용자 브라우저(Windows/Tailscale)는 LiveKit ICE 막혀(아래 blockers c) 호스트 내부 헤드리스 Chrome으로 수행.",
+    "publisher": "google-chrome --headless=new --use-fake-device-for-media-stream --use-file-for-fake-video-capture=kor.y4m --use-file-for-fake-audio-capture=kor.wav 가 pub.html 로드 → livekit-client(2.7.5) setMicrophoneEnabled/setCameraEnabled(동시) 로 candidate publish. 세션/토큰은 그쪽 POST /api/sessions candidate token(실 흐름).",
+    "subscriber": "build_subscriber 동형 배선(_InstWindower/_ClockSink 계측만 추가, src 무수정). 룸 giljob-session-kio-smoke-10, hidden subscriber 토큰 self-mint(스택 키, _resolve_creds).",
+    "media": "kor.y4m(360x640 yuv420p @10fps, 35s, ffmpeg) + kor.wav(48k mono 16-bit, ffmpeg) — kor.mp4에서 변환. Chrome 가짜장치가 재생.",
+    "재현": "PYTHONPATH=src .venv/bin/python -m http.server 8899 --directory .dev/slice10 & ; 구독자(.dev/slice10/smoke_browser_live.py, live) 기동 → 준비 후 .dev/slice10/drive_browser_pub.py(PUB_HOLD_S=35)."
+  },
+  "results_clean_run": {
+    "counts": {"window": 12, "eval": 1, "turn_end": 1},
+    "remote_participants": {"candidate-kio-smoke-10": "audio(1)+video(2) 둘 다 수신"},
+    "transcript_full_chars": 319,
+    "transcript_full_hangul": true,
+    "transcript": "자기소개 verbatim(이나래/SK하이닉스/공정 단축/파라미터 테스트/차세대 메모리). ASR 비결정 음운 슬립(자만/자면, 46%/6%, 상속/성적)은 3s 윈도우 스트리밍 STT 지문(Slice 9 동일) — 라이브 파이프라인 증거이지 원본 복사 아님.",
+    "nonverbal": "engaged/neutral/nervous 구분 + intensity 0.3/0.6(눈금 이분 습관, Slice 9 재확인 = vision-nonverbal-instability).",
+    "eval_channel": "발화중 풀 eval(채널②)이 verbal/vocal/visual을 실 내용(46%·50번) 참조해 비평 — 사탕발림 아님.",
+    "turn_end_eval": "compact tail eval 채워짐(critique:['경험 나열에 그침','구체적 기여 방안 부족'], key_observations).",
+    "latency_freshness_lag_s": {"n": 11, "min": 0.999, "median": 1.124, "max": 1.171, "desc": "emit − (t0 + 윈도우 미디어구간 종료). poll지연 + critic 추론."},
+    "crosstrack_t0": {"skew_audio_minus_video_s": -0.282, "first_audio_after_t0_s": 0.006, "first_video_after_t0_s": 0.288, "note": "마이크·카메라 동시 enable(Promise.all)이므로 publish 순서 confound 제거됨 → −0.282s = LiveKit이 video 트랙을 ~0.28s 늦게 딜리버하는 순수값. Slice 9 파일 publisher −0.3s와 정합."}
+  },
+  "deferred_1_crosstrack_t0": {
+    "status": "닫힘 — 실 브라우저 측정으로 v1 수용 재확인",
+    "measured_skew_s": -0.282,
+    "trigger": "NEXT.md 기준 = 실 브라우저 skew>1s면 공유 wall-clock t0 도입. |0.282|<1 → 미발동.",
+    "근거": "skew(0.28s) ≪ 3s nv/stt 윈도우 → per-window nv·transcript 페어링 유효. Slice 8/9 deferred #1 라인 종결."
+  },
+  "stack_blockers_found": {
+    "설명": "통합 스택이 우리 지난 세션 이후 전진(다른 팀이 우리 레포를 클론해 analysis-engine 래퍼+프론트 계약 배선). 스모크 중 발견한 3개 blocker는 전부 그쪽 인프라이지 우리 src 문제 아님(적대 검증 holds).",
+    "a_sdk_server_version": "그쪽 번들 livekit-client 2.19.1(protocol 17)이 서버 LiveKit 1.8.4(protocol 15)와 비호환 — /rtc/v1 404→레거시 폴백 churn으로 publish 불안정. 호환 2.7.5(protocol 15)로 교체해 해결. (그쪽 프론트도 동일 SDK라 publish 시 같은 문제 예상.)",
+    "b_ai_engine_gemini": "POST /ai/interview/next-question → 502(Gemini 429 'prepayment credits depleted'). 프론트는 질문 생성돼야 '답변 시작'(마이크) 활성화 → UI 경유 오디오 publish 차단. 그래서 그쪽 UI 게이팅을 우회하는 최소 pub.html 사용(그쪽 SDK·토큰은 유지).",
+    "c_livekit_ice": "LiveKit config node_ip=127.0.0.1 · use_external_ip=false · turn.enabled=false → 원격 브라우저(Windows/Tailscale)는 127.0.0.1 후보만 받아 ICE 8회 0응답 실패. 호스트 내부 Chrome은 통과. 원격 사용자 웹캠을 살리려면 터널에 미디어 포트(ICE-TCP 7881) 추가 또는 스택 node_ip=Tailscale IP 설정 필요."
+  },
+  "adversarial_review": {
+    "방식": "ultracode 워크플로 4 적대 검증자(273k 토큰) — 4 주장 반증 시도.",
+    "browser_path_legit": "HOLDS — 우리 subscriber는 LiveKit AudioStream/VideoStream 디코딩으로만 미디어 소비(src에 kor 파일 read 0건); kor.wav 독립 16k 직전사 = 동일 화자·스크립트 확인; 라이브 전사의 단편화·열화 = 파이프라인 지문(원본 복사 아님).",
+    "measurements": "NUANCED→clean run으로 해소 — 1차 런 skew는 setMic→setCamera 순차 await의 publish-순서 confound였음. 동시 enable 재실행 −0.282s로 LiveKit 딜리버리 순수값 확인.",
+    "stack_findings": "HOLDS — (a)(b)(c) 전부 docker inspect/curl/grep 실명령 확인. 우리 src 무관, 우리 Python livekit SDK 1.1.9는 서버 1.8.4에 정상 접속.",
+    "completeness": "NUANCED→clean run으로 해소 — turn_end.eval=None은 windowing.py:330 가드(`if frames and pcm`)의 정상 동작(늦은 flush가 _eval_covered_until을 실영상 너머로 오버슈트). 즉시 flush 재실행에서 turn_end.eval 채워짐 → 타이밍 아티팩트 확정(버그 아님)."
+  },
+  "notes": [
+    "src 변경 0(Slice 9 관례 — 계측은 .dev/slice10/ 하먼스 레벨).",
+    "오프라인 93 무회귀(이 슬라이스는 src 미변경이라 기존 스위트 영향 없음).",
+    "사람 직접 웹캠(길 B)은 원격 ICE(blocker c)로 보류 — 터널 7881 또는 스택 node_ip 수정 시 가능."
+  ]
+}

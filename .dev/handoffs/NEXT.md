@@ -48,6 +48,25 @@
   - **오프라인 93 무회귀**. 적대적 리뷰=인라인(측정 방법론 자기검증, 정정 버그 0).
   - ★ **후속(Slice 9 종료 후)**: ① giljob-v2 스택 **재기동함(현재 UP)** ② **공유 백엔드로 재검증** — `VLLM_BASE_URL`=스택 gemma-e4b(8000) + LiveKit=스택 livekit(7880, 실 키)으로 재실행 → 독립 구성과 **동일**(window 14·eval 2·turn_end 1, lag ~1s, skew ~-0.37s, 전사 verbatim). analysis-engine이 자체 vLLM 없이 스택 백엔드 공유하는 **실 통합 구성 실증**. 테스트 자격증명 `_resolve_creds`(env→컨테이너→dev fallback)로 일반화. evidence `live-critic.json`에 두 구성·공유 백엔드 발견 반영. 메모리 `giljob-docker-integration-target` 갱신.
 
+- **완료: Slice 10** — 실 브라우저 e2e 스모크 **PASS(2회 재현)**. 상세 → `.dev/handoffs/slice-10-browser-smoke.md`.
+  - 신규(`.dev/slice10/`): `smoke_browser_live.py`(구독자 하먼스, _InstWindower/_ClockSink 계측 재사용, src 무수정)·
+    `drive_browser_pub.py`(POST /api/sessions → 가짜장치 헤드리스 Chrome으로 pub.html publish, Playwright CDP)·
+    `pub.html`(최소 publisher, livekit-client 2.7.5 getUserMedia 동시 enable)·`tail_records.py`. evidence
+    `tests/evidence/browser-live.json`(+raw). **오프라인 93 무회귀**(src 미변경).
+  - 진짜 헤드리스 Chrome `getUserMedia`(가짜장치 kor.y4m/wav) → livekit-client → publish → 우리 subscriber 종단.
+    Slice 9 합성 publisher가 우회한 **#1 갭(브라우저→publish) 닫음**. 전사 verbatim·nv·eval·turn_end.eval 전부 OK.
+  - ★★ **통합 스택이 전진 발견**(NEXT.md 위 §통합 타깃 갱신 필요): 다른 팀이 **우리 레포(b769120=현재 src와
+    동일)를 클론해 `analysis-engine`(8200) HTTP 래퍼**로 실행 중(`ANALYSIS_ENGINE_ENABLE_SUBSCRIBER=false`), 프론트가
+    `/analysis/subscriber/start|stop`·`/analysis/signals` 계약에 완전 배선(턴경계=UI버튼, 출력=프론트가 next-question에 중계).
+    → roadmap 오픈질문 #1~3 그쪽 선택으로 닫힘.
+  - ★ **blocker 3종(전부 그쪽 인프라, 적대검증 holds)**: (a) 번들 SDK 2.19.1↔서버 1.8.4 비호환(/rtc/v1 404) → 2.7.5로 우회,
+    (b) ai-engine Gemini 429(크레딧 소진)로 마이크 게이팅 차단 → 최소 pub.html로 UI 우회, (c) LiveKit node_ip=127.0.0.1·
+    use_external_ip=false → 원격 브라우저 ICE 실패 → 호스트 내부 Chrome으로 수행(사람 웹캠 길 B는 보류).
+  - ★ **deferred #1 크로스트랙 t0 = 실 브라우저로 닫음**: 동시 enable 클린 런 skew **−0.282s**(LiveKit이 video ~0.28s 늦게
+    딜리버, publish 순서 아님). <1s → v1 수용. Slice 8/9 deferred #1 라인 **종결**.
+  - ★ ultracode 적대 검증(워크플로 4 검증자): browser-path·stack-findings HOLDS, measurements·completeness는
+    NUANCED → **클린 재실행으로 해소**(turn_end.eval=None=타이밍 아티팩트 확정, 크로스트랙 confound 제거).
+
 ## ★★ 통합 타깃 (모든 다음 슬라이스가 인지 — 메모리 `giljob-docker-integration-target`)
 이 레포는 최종적으로 **`github.com/GilJob-E/giljob-docker`의 `services/analysis-engine/`**로 통합된다.
 입력 모델이 PLAN과 다름: aiortc 직접 수신이 아니라 **LiveKit room subscribe**. **그쪽 프론트(`apps/web`)는
@@ -57,29 +76,26 @@
 출력 소비자=`services/ai-engine`(Gemini, HTTP+JSON, internal). 컨테이너 규약(alpine→네이티브 시 slim
 협의·requirements.txt·/healthz·AGENTS+CLAUDE 쌍)은 메모리 참조.
 
-## 다음 할 일 = Slice 10: **실 브라우저 e2e 스모크** ⭐ (목표=진짜 브라우저 작동 → PR)
-> ★ 전체 그림(Slice 10~13)은 **`.dev/handoffs/roadmap-browser-to-pr.md` 필독**. Slice 9까지는 합성
-> publisher(우리가 직접 push). Slice 10은 **진짜 브라우저 getUserMedia→livekit publish** 경로를 거쳐
-> 우리 subscriber가 실 발화를 전사·분석하는지 본다(합성 publisher가 우회한 앞단 검증).
-> (이전 "Slice 10=통합 패키징"은 **Slice 12로 재배치** — 로드맵 참조.)
+## 다음 할 일 = Slice 11: **통합 계약 실 검증 — 그쪽 analysis-engine `ENABLE_SUBSCRIBER=true`** ⭐
+> ★ roadmap(`roadmap-browser-to-pr.md`)은 Slice 10 발견(통합 스택 전진)으로 **부분 superseded** — slice-10
+> 핸드오프 §"통합 스택 전진" + §"다음 슬라이스 후보"를 정본으로. 핫패스(입력→비평+전사→JSON)는 합성·실
+> critic·라이브·실 브라우저까지 **전부 닫혔다**. 남은 건 그쪽 계약 충족 + 실 통합 검증.
 
-1. 먼저 **`roadmap-browser-to-pr.md`**(10~13 전체+환경사실+오픈질문) + `slice-09-live-critic.md`(측정 계측
-   재사용) + 메모리 `giljob-docker-integration-target` 정독.
-2. **환경 확인**: `docker ps`로 **giljob-v2 스택 UP** 확인(내려가 있으면 메모리 §재기동법 `docker start`).
-   - caddy `:80` = 인터뷰 웹 프론트(브라우저 진입), livekit `:7880`(스택 키=`_resolve_creds` 자동),
-     gemma-e4b `:8000`(=우리 vLLM 동일물, `VLLM_BASE_URL` 기본). **우리 vLLM·livekit-dev 따로 안 띄움.**
-3. **스모크 배선**: 기존 `build_subscriber`/`LiveKitSubscriber`로 우리 subscriber를 룸에 띄우고, 브라우저가
-   같은 룸에 publish. **핵심 선결=룸 id 코디네이션**(오픈질문 #1): `POST /api/sessions`가 만든 룸 id를
-   우리 subscriber에 전달(스모크는 수동 조율로 시작). 두 방식: (A) **사람**이 웹캠으로 말함(가장 진짜),
-   (B) Chrome **fake-device**(`--use-file-for-fake-video/audio-capture`=kor.mp4→y4m/wav)로 재현가능 자동화.
-4. **측정/완료기준**: 브라우저 publish → 우리 JSON에 발화 일치 transcript + nv, 풀 답변 무크래시. ★ **deferred
-   #1 크로스트랙 t0 = 실 브라우저 측정**(파일 publisher 하한 ~0.3s; 카메라 기동 skew 실측 → **>1s면 공유
-   wall-clock t0 도입 결정**). `test_e2e_live_critic`의 `_ClockSink`/`_InstWindower` 계측 재사용.
-5. (부수) 즉흥 한국어/노이즈 전사 품질·landscape 웹캠(세로 squish 해소) 재확인.
+1. 먼저 **`slice-10-browser-smoke.md`**(통합 스택 전진·계약·blocker 3종) + 메모리 `giljob-docker-integration-target` 정독.
+2. **환경 확인**: `docker ps`로 giljob-v2 스택 UP. analysis-engine-1(8200)이 **우리 레포 b769120(=현재 src 동일)**
+   를 클론해 실행 중이나 `ANALYSIS_ENGINE_ENABLE_SUBSCRIBER=false`. **우리 vLLM/livekit 따로 안 띄움**(스택 공유).
+3. **실 통합 검증**(핵심): 그쪽 `ENABLE_SUBSCRIBER=true`로 켜고(그쪽 env/이유 조율 필요 — 왜 꺼뒀나) **전 루프**
+   확인 — 브라우저 publish → 그쪽 analysis-engine이 우리 subscriber 띄움 → `GET /analysis/signals`에 우리
+   transcript/nv → 프론트가 `/ai/interview/next-question`에 중계. (계약: `/analysis/subscriber/start|stop`·`/analysis/signals`,
+   룸 `giljob-session-{sessionId}`, POST /api/sessions가 sessionId 존중.)
+4. **그쪽에 blocker 보고**(코드보다 먼저): (a) 번들 SDK livekit-client 2.19.1 ↔ 서버 1.8.4 비호환(/rtc/v1 404 churn —
+   그쪽 프론트 publish도 영향), (b) ai-engine Gemini 크레딧 소진(429), (c) LiveKit node_ip=127.0.0.1·use_external_ip=false
+   (원격 브라우저 ICE 실패 — external IP/TURN 또는 ICE-TCP).
+5. (부수) 사람 웹캠(길 B): 터널 7881(ICE-TCP) 추가 또는 스택 node_ip=Tailscale IP 후 재시도. / 스모크 하먼스
+   (`.dev/slice10/`)를 tests/ 게이트 e2e로 승격 검토.
 
-> 환경: 스택이 **현재 UP**(2026-06-04 재기동). 내려가 있으면 메모리 `giljob-docker-integration-target`
-> §재기동법으로 `docker start`(의존순). **우리 vLLM/livekit-dev는 띄우지 말 것**(스택 gemma-e4b·livekit
-> 공유 — 8000/7880 충돌 회피). GPU 위생: 스택 gemma-e4b가 GPU 사용 중(정상, 스택 소유).
+> 환경: 스택 **현재 UP**. **우리 vLLM/livekit-dev 띄우지 말 것**(스택 gemma-e4b 8000·livekit 7880 공유). GPU
+> 위생: 스택 gemma-e4b가 GPU 사용 중(정상, 스택 소유 — 우리가 정리할 컨테이너 없음).
 
 ## 불변 규칙 (매 슬라이스 공통)
 - src = 계층형 subpackage. import: **intra=relative / cross=absolute** (PLAN.md §1, 메모 `[[layered-src-structure]]`).

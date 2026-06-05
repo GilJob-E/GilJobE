@@ -40,3 +40,10 @@ out/
 # 오디오 프로소디 탐색(.dev/audio/ — 진입점 README.md). 추출 PCM = kor.mp4 파생(클립과 같은 비커밋 정책).
 # 스크립트(.py)·결과(.json)·문서(.md)는 커밋한다.
 /.dev/audio/*.pcm
+
+# Slice 10 브라우저 스모크(.dev/slice10/) — 대용량 파생물(kor.mp4→y4m/wav, jsdelivr SDK, 런 산출물).
+# 재생성: handoff slice-10 참고(ffmpeg 변환 + livekit-client@2.7.5 다운로드). 스크립트(.py)·pub.html은 커밋.
+/.dev/slice10/*.y4m
+/.dev/slice10/*.mjs
+/.dev/slice10/*.jsonl
+/.dev/slice10/*.log

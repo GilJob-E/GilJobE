@@ -1,0 +1,50 @@
+<!doctype html>
+<!-- Slice 10 최소 publisher — 진짜 브라우저 getUserMedia(가짜장치=kor.mp4) → livekit-client SDK → publish.
+     그쪽 프론트 UI는 ai-engine(Gemini 크레딧 소진)으로 마이크 게이팅이 막혀 못 씀 → 막힌 버튼만 우회.
+     그쪽 SDK(livekit-client.esm.mjs)와 세션/토큰(POST /api/sessions candidate token)은 그대로 사용. -->
+<html lang="ko">
+<head><meta charset="utf-8" /><title>giljobe slice10 pub</title></head>
+<body style="font-family:monospace;background:#111;color:#0f0">
+  <h2 id="s">starting…</h2>
+  <video id="v" autoplay muted playsinline width="240"></video>
+  <script type="module">
+    import { Room, RoomEvent } from "./lk-sdk.mjs";
+    const q = new URLSearchParams(location.search);
+    const url = q.get("url");
+    const token = q.get("token");
+    const s = document.getElementById("s");
+    const log = (m) => { s.textContent = m; console.log("[pub] " + m); };
+    const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+    window.__pubState = "init";
+    try {
+      // 그쪽 SDK(2.19.1)가 서버(1.8.4)에 /rtc/v1 404 → 레거시 /rtc 폴백 재연결을 한다.
+      // 즉시 publish하면 그 churn에 track이 꼬이므로, connected 안정화 후 enable로 publish.
+      const room = new Room({ adaptiveStream: false, dynacast: false });
+      room.on(RoomEvent.ConnectionStateChanged, (st) => { window.__connState = st; console.log("[pub] connstate=" + st); });
+      room.on(RoomEvent.Disconnected, (r) => { window.__pubState = "disconnected:" + (r || ""); log("disconnected " + (r || "")); });
+      log("connecting to " + url + " …");
+      await room.connect(url, token, { autoSubscribe: false });
+      log("connected room=" + room.name + " — 안정화 대기…");
+      await sleep(2500);  // v1→legacy 폴백 재연결이 끝나도록 settle
+      log("publishing (setCamera/Mic Enabled = fake device getUserMedia)…");
+      // 마이크·카메라를 **동시** enable(Promise.all) — 순차 await는 audio가 먼저 publish돼
+      // 크로스트랙 skew 측정에 publish-순서 confound를 넣는다(Slice 10 검증 지적). 동시 호출로 제거.
+      await Promise.all([
+        room.localParticipant.setMicrophoneEnabled(true),
+        room.localParticipant.setCameraEnabled(true),
+      ]);
+      const pubs = room.localParticipant.trackPublications.size;
+      const vt = room.localParticipant.getTrackPublication("camera");
+      if (vt && vt.track) document.getElementById("v").srcObject = new MediaStream([vt.track.mediaStreamTrack]);
+      window.__pubRoom = room.name;
+      window.__pubState = "publishing";
+      window.__pubTracks = pubs;
+      log("PUBLISHING ok — room=" + room.name + " tracks=" + pubs + " identity=" + room.localParticipant.identity);
+    } catch (e) {
+      window.__pubState = "error:" + (e && e.message ? e.message : e);
+      log("ERROR: " + (e && e.message ? e.message : e));
+      console.error(e);
+    }
+  </script>
+</body>
+</html>
