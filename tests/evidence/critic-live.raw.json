@@ -15,11 +15,12 @@
         "window_s": 3.0,
         "state": "engaged",
         "intensity": 0.6,
-        "note": "시선은 안정적이나, 미세한 입술 떨림과 약간의 긴장감이 관찰됨"
+        "note": "시선은 안정적이나, 미세한 입술 떨림과 약간의 경직된 표정이 관찰됨",
+        "objective": null
       },
-      "nv_latency_s": 0.657,
+      "nv_latency_s": 0.796,
       "transcript": "난 아르바이트에 한 번도 지각하지 않았고 성적 장학금",
-      "stt_latency_s": 0.236,
+      "stt_latency_s": 0.243,
       "transcript_chars": 29,
       "transcript_hangul": true
     },
@@ -33,11 +34,12 @@
         "window_s": 3.0,
         "state": "engaged",
         "intensity": 0.6,
-        "note": "시선은 정면을 응시하고 있으며, 미세한 미소가 유지되고 있음"
+        "note": "시선은 정면을 응시하고 있으며, 미세한 미소가 유지되고 있음",
+        "objective": null
       },
-      "nv_latency_s": 0.604,
+      "nv_latency_s": 0.696,
       "transcript": "특기는 걸 성공했고 대상도 수상할 수 있었습니다.",
-      "stt_latency_s": 0.157,
+      "stt_latency_s": 0.16,
       "transcript_chars": 27,
       "transcript_hangul": true
     }
@@ -45,14 +47,14 @@
   "eval_compact": {
     "ss": 10.0,
     "dur": 6.0,
-    "latency_s": 0.981,
+    "latency_s": 1.13,
     "compact": true,
     "key_observations": [
       "아르바이트에 지각하지 않고 장학금을 계속 받으며 좋은 태도를 유지했다는 내용이다."
     ],
     "critique": [
       "구체적인 사례 부족",
-      "자기 자랑처럼 들릴 수 있음"
+      "자기 PR에 치우침"
     ]
   }
 }

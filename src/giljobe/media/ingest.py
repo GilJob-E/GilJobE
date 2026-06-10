@@ -165,6 +165,19 @@ async def consume_audio(
 #     → PcmResampler/_concat_pcm/flush 불필요(resample-list gotcha는 aiortc 경로 한정).
 #   - video ts=ev.timestamp_us/1e6, audio는 ts가 없어 누적 frame.duration으로 미디어시계 구성.
 
+def rgb_array(data, width: int, height: int) -> np.ndarray:
+    """RGB24 raw 버퍼(rtc.VideoFrame.data) → (H,W,3) uint8 ndarray. 입력은 width*height*3 RGB24
+    가정; 행 stride 패딩이 있으면(드묾) 각 행 앞 width*3만 취해 흡수한다. 비전 그라운딩 레인
+    (analysis/grounding.py)도 같은 변환을 쓴다(중복 방지)."""
+    arr = np.frombuffer(data, dtype=np.uint8)
+    expected = width * height * 3
+    if arr.size == expected:
+        return arr.reshape(height, width, 3)
+    # stride 패딩: 한 행 바이트수 = 전체/height, 앞 width*3만 유효 픽셀
+    stride = arr.size // height
+    return arr.reshape(height, stride)[:, : width * 3].reshape(height, width, 3)
+
+
 def encode_jpeg_rgb(
     data,
     width: int,
@@ -174,15 +187,8 @@ def encode_jpeg_rgb(
     quality: int = JPEG_QUALITY,
 ) -> bytes:
     """RGB24 raw 버퍼(rtc.VideoFrame.data) → 640×480 JPEG bytes. encode_jpeg(PyAV reformat)의
-    LiveKit 대응물 — 여기선 PIL resize로 스케일(cv2 회피 동일). 입력은 width*height*3 RGB24 가정;
-    행 stride 패딩이 있으면(드묾) 각 행 앞 width*3만 취해 흡수한다."""
-    arr = np.frombuffer(data, dtype=np.uint8)
-    expected = width * height * 3
-    if arr.size == expected:
-        arr = arr.reshape(height, width, 3)
-    else:  # stride 패딩: 한 행 바이트수 = 전체/height, 앞 width*3만 유효 픽셀
-        stride = arr.size // height
-        arr = arr.reshape(height, stride)[:, : width * 3].reshape(height, width, 3)
+    LiveKit 대응물 — 여기선 PIL resize로 스케일(cv2 회피 동일)."""
+    arr = rgb_array(data, width, height)
     buf = io.BytesIO()
     Image.fromarray(arr, mode="RGB").resize(size).save(buf, format="JPEG", quality=quality)
     return buf.getvalue()
@@ -210,11 +216,16 @@ async def consume_video_lk(
     target_fps: float = TARGET_FPS,
     size: tuple[int, int] = (VIDEO_WIDTH, VIDEO_HEIGHT),
     quality: int = JPEG_QUALITY,
+    dense=None,
 ) -> None:
     """rtc.VideoStream(format=RGB24)를 ~target_fps로 throttle해 JPEG로 윈도워에 투입.
 
     타임스탬프=ev.timestamp_us/1e6를 첫 프레임 기준 상대초(t0=0)로. 종료는 EOS(async for 종료),
-    취소(CancelledError)는 전파. drop된 프레임은 인코드하지 않아 비용 거의 없다(aiortc 경로와 동일)."""
+    취소(CancelledError)는 전파. drop된 프레임은 인코드하지 않아 비용 거의 없다(aiortc 경로와 동일).
+
+    dense: 비전 그라운딩 레인 콜백 `(rel_s, frame)` — throttle *전* 매 프레임 호출(풀 fps).
+    비차단 계약(windower.add_dense_frame → grounder submit): 변환·검출은 레인 워커 몫이라
+    이벤트루프 비용은 콜백 호출 자체뿐. None이면 기존 동작 그대로."""
     interval = 1.0 / target_fps
     t0: float | None = None
     emit_at = 0.0
@@ -224,10 +235,12 @@ async def consume_video_lk(
             if t0 is None:
                 t0 = rel
             rel -= t0
+            frame = ev.frame
+            if dense is not None:  # dense 레인은 throttle을 타지 않는다(시계열 신호용 풀 fps)
+                dense(rel, frame)
             if rel + 1e-6 < emit_at:  # throttle: interval 안 지났으면 드롭(인코드 skip)
                 continue
             emit_at = rel + interval
-            frame = ev.frame
             windower.add_frame(
                 rel, encode_jpeg_rgb(frame.data, frame.width, frame.height, size=size, quality=quality)
             )

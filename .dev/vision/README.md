@@ -1,6 +1,9 @@
 # 비전 그라운딩 탐색 (보조 세션 "vision", 2026-05-31 ~ 06-02)
 
 > **다른 에이전트를 위한 진입점.** 이 폴더는 메인 슬라이스 트랙과 **별개의 보조 탐색 세션** 산출물이다.
+> **★구현 완료(2026-06-10, Slice 15)**: 이 세션의 확정 결정이 `src/giljobe/analysis/grounding.py`로
+> 편입됐다(inject-and-emit + 충돌 재추론 스파이크 PASS — 충돌 7건 중 6건 해소) —
+> 상세는 `.dev/handoffs/slice-15-grounding-lanes.md`. 이 폴더는 리서치/PoC 아카이브.
 > 메인 트랙 진입점은 `.dev/handoffs/NEXT.md` — 이 폴더는 그것을 대체하지 않는다.
 > 작업 지속 시 이 README → `conflict-analysis.md` → `research-synthesis.md` 순으로 읽으면 충분하다.
 

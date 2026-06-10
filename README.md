@@ -18,6 +18,8 @@ Python 3.12 · aiortc(WebRTC) · gje(MMM)=vLLM+Gemma-4-E4B(네이티브 AV) · f
 - **Slice 7 완료**: ingest(aiortc 트랙 소비자, video→1fps JPEG / audio→16k mono PCM) + resample-list gotcha 잠금.
 - **Slice 8 완료**: ★ LiveKit 구독자 입력 어댑터(통합 타깃 피벗) — hidden participant로 룸 join → candidate track 구독 → 파이프라인 → JSONL. **실 LiveKit 라이브 e2e PASS**. (상세 → `.dev/handoffs/`)
 - **Slice 9 완료**: ★ 라이브 e2e + **실 critic**(vLLM E4B) — 독립 livekit-server + kor.mp4 publisher → 실 `WindowCritic`+`GemmaNativeTranscriber` → JSONL 종단 측정 **PASS**. freshness lag ~0.6–1.1s, 한국어 verbatim 유지(Opus 왕복), 크로스트랙 skew ~0.3s 측정. 판정 → `tests/evidence/live-critic.json`.
+- **Slice 10–13 완료**: 실 브라우저 e2e 스모크 · 통합 계약 HTTP 서버(`python -m giljobe.server`) · 컨테이너 패키징 + giljob-docker **PR #8**(북극성 도달). 상세 → `.dev/handoffs/NEXT.md`.
+- **Slice 15 완료**: ★ 객관 그라운딩 레인(**vision MediaPipe + audio 프로소디**) inject-and-emit — 수치를 critic 프롬프트에 주입(차단 규칙)하고 record에 raw 보존(`objective_*`). 실 vLLM 충돌 재추론 스파이크 PASS(입술떨림 상투구 7→0, 제스처 단정→관측불가 정정, 볼륨 역상관 해소). optional extras `[vision]`/`[prosody]` — 없으면 자동 비활성. 상세 → `.dev/handoffs/slice-15-grounding-lanes.md`.
 - 구현 설계·빌드 순서 → **`PLAN.md`** (단 §7-8은 LiveKit 피벗으로 일부 superseded — `.dev/handoffs/NEXT.md` 우선)
 - 프로젝트 지도·작업 규칙 → **`CLAUDE.md`**, `.claude/rules/`
 
@@ -33,7 +35,7 @@ Python 3.12 · aiortc(WebRTC) · gje(MMM)=vLLM+Gemma-4-E4B(네이티브 AV) · f
 gje(MMM)는 `/home/kio/workspace/gje`의 별도 repo다. **import하지 않고**, 필수 모듈만 `src/giljobe/`로 **복사**해 리팩토링한다. (원본 디렉토리는 이동/수정하지 않는다.)
 
 ## 실행
-- 오프라인 테스트: `pytest`(GPU/네트워크 불요 — 93 passed).
+- 오프라인 테스트: `pytest`(GPU/네트워크 불요 — 137 passed; 그라운딩 레인 테스트는 `[vision]`/`[prosody]` extras·모델 게이트로 skip 가능).
 - LiveKit 구독자(통합 입력): env `LIVEKIT_URL` + (`LIVEKIT_TOKEN` 또는 `LIVEKIT_API_KEY/SECRET`) 설정 후
   `server.app.build_subscriber(critic, [JSONLSink(...)], SubscriberConfig.from_env(session_id=...))` → `await sub.run(url, token)`. (hidden subscriber로 `giljob-session-{id}` 룸에 붙어 candidate track 구독)
 - 실 LiveKit 라이브 e2e(Mock critic, 전송 배선): `pytest tests/test_e2e_live_lk.py`(서버 7880 down/키 없으면 skip).

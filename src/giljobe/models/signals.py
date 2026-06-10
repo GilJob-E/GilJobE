@@ -23,6 +23,9 @@ class NonVerbalSignal:
     state: str  # 잠정 라벨 집합: engaged|attentive|hesitant|nervous|confident|disengaged|neutral
     intensity: float  # 0.0–1.0
     note: str = ""  # 모델이 짚은 짧은 근거(선택)
+    # 객관 비전 측정치(MediaPipe 윈도우 집계, analysis/grounding.py). "inject AND emit" 설계의
+    # emit 쪽 — 모델 read와 별개로 raw 수치를 ground truth로 보존한다(.dev/vision/README.md).
+    objective: dict | None = None
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -40,6 +43,11 @@ class EvaluationSignal:
     critique: list[str] = field(default_factory=list)  # 면접관으로서 걸리는 약점·우려(강제)
     key_observations: list[str] = field(default_factory=list)
     compact: bool = False  # end-of-turn tail(짧은 출력)이면 True — 발화중 풀 비평과 구분
+    # 객관 측정치(emit 쪽) — vocal=프로소디(analysis/prosody.py), visual=비전(analysis/grounding.py).
+    # 같은 수치가 프롬프트에도 주입(inject)되므로, 모델 평가가 이 수치와 모순되면 그 자체가
+    # 모델 실패 신호다(.dev/audio/README.md·.dev/vision/README.md "inject AND emit" 필수 조건 1).
+    objective_vocal: dict | None = None
+    objective_visual: dict | None = None
 
     def to_dict(self) -> dict:
         return asdict(self)

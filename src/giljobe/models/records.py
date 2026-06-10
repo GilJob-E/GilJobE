@@ -32,6 +32,8 @@ class WindowRecord:
     nonverbal: dict | None  # {state, intensity, note} 또는 None(비디오 없던 윈도우)
     transcript: str         # 이 윈도우 전사("" = 무음/오디오 없음)
     transcript_final: bool  # 이 윈도우 전사 확정 여부(TranscriptSignal 수신=True)
+    # 객관 비전 측정치(MediaPipe 윈도우 집계) — 모델 read와 별개의 ground truth(inject AND emit).
+    objective_nonverbal: dict | None = None
     type: str = "window"
 
     @classmethod
@@ -56,6 +58,7 @@ class WindowRecord:
             nonverbal=nonverbal,
             transcript=tx.text if tx is not None else "",
             transcript_final=tx is not None,
+            objective_nonverbal=nv.objective if nv is not None else None,
         )
 
     def to_dict(self) -> dict:
@@ -68,6 +71,7 @@ class WindowRecord:
             "nonverbal": self.nonverbal,
             "transcript": self.transcript,
             "transcript_final": self.transcript_final,
+            "objective_nonverbal": self.objective_nonverbal,
         }
 
 

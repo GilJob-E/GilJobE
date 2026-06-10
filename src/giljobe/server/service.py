@@ -100,12 +100,16 @@ class AnalysisService:
         room_factory: Callable[[], Any] | None = None,
         clock: Callable[[], float] | None = None,
         executors: tuple | None = None,
+        make_lanes: Callable[[], tuple[Any, Any]] | None = None,
     ) -> None:
         self._make_critic = make_critic
         self._make_config = make_config or (lambda sid: SubscriberConfig.from_env(session_id=sid))
         self._room_factory = room_factory
         self._clock = clock or _monotonic
         self._executors = executors
+        # 객관 그라운딩 레인 팩토리 — start마다 호출해 (grounder, prosody)를 받는다(grounder는
+        # 세션 수명이라 재사용 금지 — build_subscriber 계약). None이면 레인 비활성.
+        self._make_lanes = make_lanes
         self._active: _Session | None = None
         self._last: _Session | None = None  # stop 후에도 /signals가 그 턴 결과를 읽도록 보존
         # start/stop을 직렬화 — aiohttp가 동시 요청을 별 태스크로 디스패치하므로, _active 확정 전
@@ -127,7 +131,11 @@ class AnalysisService:
         sink = MemorySink()
         critic = self._make_critic(critic_mode)
         room = self._room_factory() if self._room_factory is not None else None
-        subscriber = build_subscriber(critic, [sink], config, room=room, executors=self._executors)
+        grounder, prosody = self._make_lanes() if self._make_lanes is not None else (None, None)
+        subscriber = build_subscriber(
+            critic, [sink], config, room=room, executors=self._executors,
+            grounder=grounder, prosody=prosody,
+        )
         await subscriber.start()
         try:
             await subscriber.connect(config.url, config.token)

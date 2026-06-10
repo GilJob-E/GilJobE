@@ -61,6 +61,7 @@ class MockCritic:
         window_s: float,
         src_fps: float = 1.0,
         sample_rate: int = 16000,
+        vision: dict | None = None,
     ) -> NonVerbalSignal:
         return NonVerbalSignal(
             t=t, window_s=window_s, state=self.state, intensity=self.intensity, note=self.note,
@@ -86,6 +87,8 @@ class MockCritic:
         src_fps: float = 1.0,
         sample_rate: int = 16000,
         compact: bool = False,
+        prosody: dict | None = None,
+        vision: dict | None = None,
     ) -> EvaluationSignal:
         if compact:  # compact tail은 실 critic처럼 2키 최소 스키마 모양으로
             return EvaluationSignal(

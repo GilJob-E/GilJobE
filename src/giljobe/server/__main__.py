@@ -6,6 +6,8 @@ env에서 LiveKit/vLLM 접속을 해석한다(server.config / llm.vllm_client).
 
 env: ANALYSIS_ENGINE_PORT|PORT(기본 8200) · LIVEKIT_URL · LIVEKIT_TOKEN|LIVEKIT_API_KEY/SECRET ·
      LIVEKIT_SESSION_ID · VLLM_BASE_URL. 시크릿은 읽기만(로그 비노출 — rules/security.md).
+객관 그라운딩 레인(선택): GILJOBE_VISION_MODELS_DIR(MediaPipe .task 2개) · GILJOBE_VISION=off ·
+     GILJOBE_PROSODY=off. 의존성(`[vision]`/`[prosody]` extra)·모델이 없으면 자동 비활성(서비스 무영향).
 """
 from __future__ import annotations
 
@@ -30,6 +32,15 @@ def _build_critic():
     return WindowCritic(client=default_vllm_client())
 
 
+def _make_lanes():
+    """객관 그라운딩 레인 팩토리(start마다 호출) — 의존성/모델/env에 따라 자동 켜짐/꺼짐.
+    grounder는 세션 수명(윈도워가 close)이라 매번 새로, prosody는 상태 없지만 같은 경로로 생성."""
+    from giljobe.analysis.grounding import maybe_vision_grounder
+    from giljobe.analysis.prosody import maybe_prosody_extractor
+
+    return maybe_vision_grounder(), maybe_prosody_extractor()
+
+
 def _vllm_ready(critic) -> bool:
     health = getattr(critic.client, "health", None)
     if health is None:
@@ -49,7 +60,7 @@ def main() -> None:
     logging.basicConfig(level=os.environ.get("LOG_LEVEL", "INFO"))
     critic = _build_critic()
     # 공유 critic 재사용 — make_critic은 mode 라벨만 받고 같은 인스턴스 반환.
-    service = AnalysisService(make_critic=lambda _mode: critic)
+    service = AnalysisService(make_critic=lambda _mode: critic, make_lanes=_make_lanes)
     app = make_app(service, ready_check=lambda: _vllm_ready(critic))
 
     async def _warmup(_app: web.Application) -> None:

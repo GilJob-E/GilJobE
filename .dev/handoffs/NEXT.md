@@ -106,16 +106,31 @@
   - **재검증(06-10)**: 계약 77 중 76 pass(실패 1=main에서도 동일=기존 web-static, PR 무관 격리) · docker build 성공 ·
     `/healthz` 200 스모크 · `/readyz` 503=정상(ready_check가 vLLM 게이트) → ac2551f의 "Not-tested: docker build" 갭 닫음.
 
+- **완료: Slice 15** — ★ 객관 그라운딩 레인(vision MediaPipe + audio 프로소디) **inject-and-emit**. 상세 → `.dev/handoffs/slice-15-grounding-lanes.md`.
+  - 신규: `analysis/prosody.py`(parselmouth F0/PDQ/음절핵 + Praat 쉼 + numpy RMS — PoC와 수치 일치, 16s ~27ms)·
+    `analysis/grounding.py`(MediaPipe Face+Pose dense 레인, face·pose 각자 스레드, epoch reset·load-shedding, 53.6fps).
+    윈도워 `grounder/prosody` 주입 + `add_dense_frame`(LiveKit 경로 throttle 전 풀 fps), critic 프롬프트 주입
+    (`grounding_block`+차단 규칙), 수치는 record에 raw 보존(`objective_nonverbal`/`objective_vocal`/`objective_visual`).
+    레인은 optional extras(`[vision]`/`[prosody]`)+env(`GILJOBE_VISION_MODELS_DIR`·`GILJOBE_VISION`·`GILJOBE_PROSODY`)로
+    자동 켜짐/꺼짐 — 없으면 기존 동작 그대로(코어 무영향).
+  - **오프라인 137 passed**(기존 108 무회귀 + 신규 29). ★ **inject 스파이크 PASS**(실 vLLM, `.dev/grounding/`):
+    비전 충돌 — 입술떨림 상투구 7→0 · "제스처 못함" 3/3→"관측 불가" 정정 · ss36 긴장 해소 · intensity 고정 해소.
+    vocal 충돌 — 볼륨 역상관 2/2 해소 · 속도 자기모순 해소 · "단조" 상투구 3/3→**1/3 잔존**(수치 무시 — emit raw로 검출 가능).
+    그라운딩됐던 "호흡 짧음"은 유지(올바름). 한계: nv note의 수치-번역 경향(비전 README 열린 질문 그대로) — 핸드오프 §발견.
+
 ## 다음 할 일 = Slice 14: **PR #8 머지 + 머지 후 정리**
 > 먼저 **`slice-13-container-pr.md`** 정독. MVP 구현·검증·PR까지 완료 — 남은 건 머지(사람 결정)와 후속.
 
 1. **머지 결정**: 팀 관행=hoddukzoa12 머지(PR #7 전례). 우리 계정도 admin이라 직접 머지 가능 — **사용자에게 확인**.
    재검증 결과 PR 코멘트 공유도 사용자 결정(세션 권한 정책상 자동 발신 차단됨 — 표는 slice-13 핸드오프 ②).
 2. **머지 후 스택 검증**: 그쪽이 compose up 시 analysis-engine이 PR 이미지로 뜨는지 + 프론트 종단(/analysis/signals) 확인.
-3. **그쪽 blocker 공유**(우리 PR 밖): ai-engine Gemini 429 · node_ip 양립. (SDK 비호환은 upstream이
+3. **머지 후 그라운딩 레인 컨테이너 반영**(Slice 15 후속): giljob-docker Dockerfile에 `pip install .[vision,prosody]` +
+   MediaPipe 모델 .task 2개 + env 3종. ★parselmouth GPL-3 배포 검토(필요 시 pyworld 폴백) — slice-15 핸드오프 §한계.
+4. **그쪽 blocker 공유**(우리 PR 밖): ai-engine Gemini 429 · node_ip 양립. (SDK 비호환은 upstream이
    livekit `v1.12.0` bump로 해소 중 — 실측 확인, blocker 강등.)
-4. (post-MVP 후보) `verify_pr_container.py` tests/ 게이트 승격 · 실 사람-웹캠(`[[webcam-path-parked]]`) ·
-   보조 레인 통합 — vision MediaPipe(`[[vision-nonverbal-instability]]`) + audio 프로소디(`[[audio-prosody-grounding]]`) inject-and-emit.
+5. (post-MVP 후보) `verify_pr_container.py` tests/ 게이트 승격 · 실 사람-웹캠(`[[webcam-path-parked]]`) ·
+   그라운딩 모순 자동 플래깅(emit raw ↔ 모델 출력 대조 — "단조" 잔존 1건 같은 수치-무시 검출) ·
+   nv 채널 수치+템플릿 대체 검토(수치-번역 경향이 심하면 — slice-15 핸드오프 §발견 1).
 
 > 환경: **스택 현재 DOWN**(06-10, 컨테이너 0 — node_ip=Tailscale 잔여는 다음 compose up 시 자동 원복). 라이브 검증 필요 시
 > hoddukzoa 스택 기동(타 user 홈 — 인가 필요). giljob-docker 로컬 클론은 원격 PR 브랜치(ac2551f)와 동기.

@@ -1,7 +1,8 @@
 # 오디오(프로소디) 그라운딩 탐색 (보조 세션 "audio", 2026-06-02~)
 
-> **진행 상태: 리서치 단계 완료 / PoC 미착수.** 작업 흐름은 `.dev/vision/`(완료된 비전 탐색 세션)을
-> 템플릿으로 따른다. 지속하는 에이전트는 이 README → `research-synthesis.md` 순으로 읽으면 충분하다.
+> **진행 상태: ★구현 완료(2026-06-10, Slice 15).** 이 세션의 확정 결정이
+> `src/giljobe/analysis/prosody.py`로 편입됐다(inject-and-emit + 실 vLLM 스파이크 PASS) —
+> 상세는 `.dev/handoffs/slice-15-grounding-lanes.md`. 이 폴더는 리서치/PoC 아카이브.
 > 메인 트랙 진입점은 `.dev/handoffs/NEXT.md` — 이 폴더는 그것을 대체하지 않는다(별개 보조 탐색).
 
 ## 한 줄 요약 (리서치 + PoC 결과)

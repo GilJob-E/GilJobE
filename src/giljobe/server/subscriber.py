@@ -203,7 +203,13 @@ class LiveKitSubscriber:
             self._t0 = self._loop.time()
         kind = getattr(track, "kind", None)
         if kind == KIND_VIDEO:
-            coro = consume_video_lk(self._vstream(track, self.video_format), self.windower)
+            # 비전 그라운딩 레인이 켜져 있으면 dense 피드(풀 fps, throttle 전)를 함께 연결.
+            dense = (
+                self.windower.add_dense_frame
+                if getattr(self.windower, "grounder", None) is not None
+                else None
+            )
+            coro = consume_video_lk(self._vstream(track, self.video_format), self.windower, dense=dense)
         elif kind == KIND_AUDIO:
             stream = self._astream(track, self.audio_sr, self.audio_ch)
             coro = consume_audio_lk(stream, self.windower)

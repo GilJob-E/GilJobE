@@ -18,6 +18,9 @@ dependencies = [
 [project.optional-dependencies]
 test = ["pytest"]
 whisper = ["faster-whisper"]  # STT 폴백 (스파이크 FAIL 시에만)
+# 객관 그라운딩 레인(.dev/vision·.dev/audio 탐색 채택 스택) — 없으면 레인 자동 비활성(코어 무영향)
+vision = ["mediapipe~=0.10"]                      # Face+Pose Landmarker (CPU)
+prosody = ["praat-parselmouth~=0.4", "scipy"]     # ★parselmouth=GPL-3(배포 라이선스 주의)
 
 # Slice 12: HTTP 서버(server/)가 통합 계약(/subscriber/start|stop·/signals·/healthz)을 직접 서빙 →
 # aiohttp를 명시 의존으로 승격(위). 출력은 /signals 폴링(통합 프론트) + JSONL(감사/리플레이).

@@ -9,6 +9,12 @@
   - stt 레인(_stt_exec, 3s)      : 같은 윈도우 전사   → TranscriptSignal
   - eval 레인(_eval_exec, 16s, 선택): 발화중 풀 비평 → EvaluationSignal(compact=False)
   - tail 레인(_tail_exec, 워커1) : end-of-turn compact tail 전용 → turn_end.eval
+
+객관 그라운딩 레인(선택 주입, inject AND emit — .dev/vision·.dev/audio README):
+  - grounder(비전 dense): add_dense_frame(풀 fps)로 흘리고, nv/eval 워커가 윈도우 집계를 읽어
+    critic 프롬프트에 주입 + signal(.objective/.objective_visual)에 raw 보존.
+  - prosody(음향): eval/tail 워커가 윈도우 PCM에서 동기 계산(~27ms) → 주입 + .objective_vocal.
+  레인 실패는 수치 누락으로 강등(추론 레인 무영향). None 주입이면 기존 동작 그대로.
 nv·stt는 같은 3s 그리드라 한 poll 루프에서 둘 다 제출(레코드별 nv·전사 페어링 보장). counter는
 *제출 시점*에 전진하므로 동시 poll에도 같은 윈도우를 두 번 추론하지 않는다(race-free, lock 보호).
 워커 예외는 삼키지 않고 로깅한다(silent drop 방지). worker→loop 복귀는 on_signal로만(서버가
@@ -51,7 +57,7 @@ class _Critic(Protocol):
 
     def read_nonverbal(
         self, jpeg_frames: list[bytes], pcm: bytes, *, t: float, window_s: float,
-        src_fps: float = ..., sample_rate: int = ...,
+        src_fps: float = ..., sample_rate: int = ..., vision: dict | None = ...,
     ) -> NonVerbalSignal: ...
 
     def transcribe_window(
@@ -61,7 +67,26 @@ class _Critic(Protocol):
     def evaluate_window(
         self, jpeg_frames: list[bytes], pcm: bytes, *, window_start_s: float, window_dur_s: float,
         src_fps: float = ..., sample_rate: int = ..., compact: bool = ...,
+        prosody: dict | None = ..., vision: dict | None = ...,
     ) -> EvaluationSignal: ...
+
+
+class _Grounder(Protocol):
+    """비전 dense 레인 표면(analysis/grounding.py VisionGrounder가 만족). 윈도워는 dense 프레임을
+    add_frame으로 흘리고(버퍼링 없음), 워커에서 윈도우 집계만 읽는다. 수명(reset/close)은
+    윈도워가 함께 구동한다 — 세션마다 새로 만들어 주입하는 계약(build_subscriber)."""
+
+    def add_frame(self, t_s: float, frame) -> None: ...
+    def window_metrics(self, start_s: float, end_s: float) -> dict | None: ...
+    def reset(self) -> None: ...
+    def close(self) -> None: ...
+
+
+class _Prosody(Protocol):
+    """프로소디 레인 표면(analysis/prosody.py ProsodyExtractor가 만족). 상태 없음 — 워커가
+    윈도우 PCM에서 직접 계산한다(실측 16s ~27ms, eval 추론 3–7s 대비 무시 가능)."""
+
+    def extract(self, pcm: bytes, *, sample_rate: int = ...) -> dict | None: ...
 
 
 class InlineExecutor:
@@ -100,6 +125,8 @@ class TurnWindower:
         eval_executor=None,
         tail_executor=None,
         eot_deadline_s: float = 3.0,
+        grounder: _Grounder | None = None,
+        prosody: _Prosody | None = None,
     ) -> None:
         self.ev = critic
         self.on_signal = on_signal
@@ -108,6 +135,10 @@ class TurnWindower:
         self.src_fps = src_fps
         self.sample_rate = sample_rate
         self.eot_deadline_s = eot_deadline_s  # compact tail/최종 stt를 기다리는 안전 상한(backstop)
+        # 객관 그라운딩 레인(선택, inject AND emit). None이면 기존 동작 그대로(레인 비활성).
+        # grounder 수명은 윈도워가 함께 구동한다(reset/close) — 세션마다 새로 만들어 주입.
+        self.grounder = grounder
+        self.prosody = prosody
 
         # 실행 레인. executor 주입 시 네 레인 공용(InlineExecutor=동기, 테스트용).
         # nv/stt/eval/tail executor를 따로 주입하면 그걸 쓰고(앱-레벨 공유), 다 None이면 자체 생성.
@@ -156,6 +187,13 @@ class TurnWindower:
         with self._lock:
             self._audio.append((t_s, pcm))
 
+    def add_dense_frame(self, t_s: float, frame) -> None:
+        """비전 dense 레인 입력(풀 fps) — 버퍼링 없이 grounder로 즉시 전달(비차단 submit).
+        1fps JPEG 버퍼(add_frame)와 분리된 피드: 깜빡임·움직임 분산 같은 시계열 신호는 1fps로는
+        구조적으로 못 잰다(.dev/vision/README.md). grounder 없으면 no-op(ingest는 분기 불요)."""
+        if self.grounder is not None:
+            self.grounder.add_frame(t_s, frame)
+
     def _slice(self, start_s: float, end_s: float) -> tuple[list[bytes], bytes]:
         # 호출자가 self._lock을 잡은 상태에서 호출(버퍼 일관성 — append와 경합 방지).
         frames = [j for (t, j) in self._frames if start_s <= t < end_s]
@@ -202,16 +240,39 @@ class TurnWindower:
         if pending:
             wait(pending, timeout=timeout)
 
+    # ── 그라운딩 레인 읽기 (워커에서 호출 — 실패가 추론 레인을 죽이면 안 됨: None으로 강등) ──
+    def _window_vision(self, start_s: float, end_s: float) -> dict | None:
+        if self.grounder is None:
+            return None
+        try:
+            return self.grounder.window_metrics(start_s, end_s)
+        except Exception:  # noqa: BLE001 - 그라운딩 실패는 수치만 누락(주입/emit 생략)
+            logger.exception("vision window_metrics failed [%.1f, %.1f)", start_s, end_s)
+            return None
+
+    def _window_prosody(self, pcm: bytes) -> dict | None:
+        if self.prosody is None or not pcm:
+            return None
+        try:
+            return self.prosody.extract(pcm, sample_rate=self.sample_rate)
+        except Exception:  # noqa: BLE001 - 그라운딩 실패는 수치만 누락(주입/emit 생략)
+            logger.exception("prosody extract failed")
+            return None
+
     # ── 워커 잡 (예외는 로깅하고 삼킨다 — 한 윈도우 실패가 파이프라인을 죽이지 않게) ──
     def _do_nv(self, start_s: float, dur_s: float, frames: list[bytes], pcm: bytes):
+        # 수치를 critic 호출 *전에* 집계 — inject(프롬프트 주입) AND emit(signal에 raw 보존).
+        vision = self._window_vision(start_s, start_s + dur_s)
         try:
             sig = self.ev.read_nonverbal(
                 frames, pcm, t=start_s + dur_s / 2, window_s=dur_s,
-                src_fps=self.src_fps, sample_rate=self.sample_rate,
+                src_fps=self.src_fps, sample_rate=self.sample_rate, vision=vision,
             )
         except Exception:  # noqa: BLE001 - 워커 실패는 로깅하고 신호만 누락(다음 read가 커버)
             logger.exception("nonverbal read failed [%.1f, +%.1fs]", start_s, dur_s)
             return None
+        # emit 쪽은 윈도워가 직접 붙인다 — 모델이 수치를 무시해도 raw는 ground truth로 남는다.
+        sig.objective = vision
         self._emit(sig)
         return sig
 
@@ -233,14 +294,20 @@ class TurnWindower:
 
     def _do_eval(self, start_s: float, dur_s: float, frames: list[bytes], pcm: bytes):
         """발화중 풀 평가(채널②). 성공 시 *연속 성공* prefix만큼 covered_until 전진 후 emit."""
+        # 객관 수치(프로소디 ~27ms·비전 집계 ~ms)는 eval 추론(3–7s) 대비 무시 가능 — 워커 내 동기.
+        prosody = self._window_prosody(pcm)
+        vision = self._window_vision(start_s, start_s + dur_s)
         try:
             sig = self.ev.evaluate_window(
                 frames, pcm, window_start_s=start_s, window_dur_s=dur_s,
                 src_fps=self.src_fps, sample_rate=self.sample_rate, compact=False,
+                prosody=prosody, vision=vision,
             )
         except Exception:  # noqa: BLE001 - 실패 시 covered_until 전진 안 함 → eot compact tail이 재커버
             logger.exception("eval failed [%.1f, +%.1fs]", start_s, dur_s)
             return None
+        sig.objective_vocal = prosody
+        sig.objective_visual = vision
         # max()가 아니라 연속 prefix라야: 앞 윈도우가 실패/지연되면 covered_until이 그 구멍을
         # 건너뛰지 않고 멈춘다 → 그 미평가 구간을 end_turn compact tail이 다시 커버(누락 방지).
         with self._lock:
@@ -255,14 +322,20 @@ class TurnWindower:
     def _do_tail(self, start_s: float, dur_s: float, frames: list[bytes], pcm: bytes):
         """end-of-turn compact tail. _do_eval과 달리 standalone emit하지 않고 sig를 *반환*만 한다
         — end_turn이 turn_end.eval에 임베드(소비자가 같은 eval을 두 번 받지 않게). 실패면 None."""
+        prosody = self._window_prosody(pcm)
+        vision = self._window_vision(start_s, start_s + dur_s)
         try:
-            return self.ev.evaluate_window(
+            sig = self.ev.evaluate_window(
                 frames, pcm, window_start_s=start_s, window_dur_s=dur_s,
                 src_fps=self.src_fps, sample_rate=self.sample_rate, compact=True,
+                prosody=prosody, vision=vision,
             )
         except Exception:  # noqa: BLE001 - tail 실패는 로깅, turn_end.eval=None(전사 합본은 그대로 emit)
             logger.exception("compact tail eval failed [%.1f, +%.1fs]", start_s, dur_s)
             return None
+        sig.objective_vocal = prosody
+        sig.objective_visual = vision
+        return sig
 
     # ── 스케줄 ──
     def poll(self, now_s: float) -> None:
@@ -388,6 +461,8 @@ class TurnWindower:
             self._next_eval_end = self.eval_w
             self._eval_covered_until = 0.0
             self._eval_done_ends = set()
+        if self.grounder is not None:  # dense 행/epoch 초기화(이전 턴 in-flight 결과 차단)
+            self.grounder.reset()
         with self._tx_lock:
             self._transcripts = {}
         with self._fut_lock:
@@ -400,9 +475,13 @@ class TurnWindower:
 
     def close(self) -> None:
         """신호 수용 중단(_closed) 후 소유한 실행기 종료. 주입 실행기는 호출자 책임.
-        end_turn 후 호출되면 아직 도는 풀 평가의 뒤늦은 emit은 _closed 가드로 no-op."""
+        end_turn 후 호출되면 아직 도는 풀 평가의 뒤늦은 emit은 _closed 가드로 no-op.
+        ★예외: grounder는 주입이어도 윈도워가 닫는다 — 세션마다 새로 만드는 계약(_Grounder 참조)
+        이라 executor 공유 패턴과 달리 재사용처가 없고, 안 닫으면 MediaPipe 스레드 2개가 샌다."""
         with self._out_lock:
             self._closed = True
+        if self.grounder is not None:
+            self.grounder.close()
         if self._owns_exec:
             self._nv_exec.shutdown(wait=False)
             self._stt_exec.shutdown(wait=False)

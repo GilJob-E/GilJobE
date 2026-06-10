@@ -18,6 +18,8 @@ from giljobe.llm.vllm_client import VllmClient, default_vllm_client
 from giljobe.media.window_assembly import assemble_audio_url, assemble_video_url
 from giljobe.models.signals import NONVERBAL_STATES, EvaluationSignal, NonVerbalSignal
 
+from .grounding import describe_visual
+from .prosody import describe_vocal
 from .transcriber import GemmaNativeTranscriber, Transcriber
 
 MODEL = "google/gemma-4-E4B-it"
@@ -58,6 +60,37 @@ EVAL_TAIL_SYSTEM = (
     '{"summary": "이 구간 한 줄 요약(한국어, 한 문장)", '
     '"critique": ["가장 걸리는 약점 1~2개, 한국어 짧게"]}'
 )
+
+
+# inject-and-emit 차단 규칙(.dev/vision/README.md 필수 조건 2) — 수치는 객관 레인이 실측한
+# ground truth이고, 모델의 역할은 측정이 아니라 해석이다. 충돌 7건(비전)·3건(오디오)은 전부
+# "측정 못 하는데 측정한 척"에서 왔으므로 생성 시점에서 막는다. 같은 수치가 record에도 raw로
+# 보존되므로(emit), 모델 출력이 수치와 모순되면 그 자체가 모델 실패 신호다.
+GROUNDING_RULES = (
+    "위 측정치는 이 구간을 객관 도구로 실측한 값입니다. 반드시 따르세요: "
+    "(1) 측정치와 모순되는 묘사 금지. "
+    "(2) 측정치에 근거 없는 관찰(예: 측정되지 않은 떨림·미세 표정)을 지어내지 말 것. "
+    "(3) '관측 불가'로 표시된 항목은 평가하지 말 것 — 없다고 단정하는 것도 금지. "
+    "(4) 긴장·자신감·열정 같은 내면 상태는 어떤 측정치로도 단정할 수 없습니다 — "
+    "보이는/들리는 단서만 기술하세요."
+)
+
+
+def grounding_block(*, vision: dict | None = None, prosody: dict | None = None) -> str:
+    """객관 측정치를 프롬프트 주입 블록으로 직렬화(한국어 라벨 — raw 수치 dump가 아니라 집계).
+    측정치가 없으면 빈 문자열(주입 생략). 해석 라벨은 붙이지 않는다(측정/해석 분업)."""
+    lines: list[str] = []
+    if vision:
+        desc = describe_visual(vision)
+        if desc:
+            lines.append("[시각 측정치 — MediaPipe 실측]\n" + desc)
+    if prosody:
+        desc = describe_vocal(prosody)
+        if desc:
+            lines.append("[음성 측정치 — 프로소디 실측]\n" + desc)
+    if not lines:
+        return ""
+    return "\n\n" + "\n\n".join(lines) + "\n\n" + GROUNDING_RULES
 
 
 def _video_part(url: str) -> dict:
@@ -192,12 +225,18 @@ class WindowCritic:
         window_s: float,
         src_fps: float = 1.0,
         sample_rate: int = 16000,
+        vision: dict | None = None,
     ) -> NonVerbalSignal:
-        """채널 ① — 짧은 윈도우에서 지원자 비언어 상태 read."""
+        """채널 ① — 짧은 윈도우에서 지원자 비언어 상태 read.
+
+        vision: 비전 dense 레인의 윈도우 집계(analysis/grounding.py). 있으면 프롬프트에 주입
+        (inject) — 1fps 프레임 3장이 못 담는 시계열 정보(깜빡임 횟수·미소 지속%·움직임 분산)를
+        보강하고, 근거 없는 관찰/긴장 단정을 생성 시점에서 차단한다(GROUNDING_RULES)."""
         content = [_video_part(assemble_video_url(jpeg_frames, src_fps=src_fps))]
         if pcm:
             content.append(_audio_part(assemble_audio_url(pcm, sample_rate=sample_rate)))
-        content.append({"type": "text", "text": "Read the candidate's non-verbal state now."})
+        prompt = "Read the candidate's non-verbal state now." + grounding_block(vision=vision)
+        content.append({"type": "text", "text": prompt})
         data = self._ask_json(system=NONVERBAL_SYSTEM, content=content, max_tokens=self.nonverbal_max_tokens)
         state = str(data.get("state", "neutral")).strip().lower()
         if state not in NONVERBAL_STATES:
@@ -238,12 +277,19 @@ class WindowCritic:
         src_fps: float = 1.0,
         sample_rate: int = 16000,
         compact: bool = False,
+        prosody: dict | None = None,
+        vision: dict | None = None,
     ) -> EvaluationSignal:
         """채널 ② — verbal/vocal/visual 비평. compact=True면 답변 *마지막 구간*을 짧은 출력으로
-        비평(터너 토큰을 줄여 end-of-turn 지연을 ≤목표로 — 생성 토큰이 지배 비용)."""
+        비평(터너 토큰을 줄여 end-of-turn 지연을 ≤목표로 — 생성 토큰이 지배 비용).
+
+        prosody/vision: 객관 레인의 윈도우 측정치(analysis/prosody.py·grounding.py). 있으면
+        프롬프트에 주입 — vocal(단조로움·속도·볼륨·쉼)·visual(미소·자세·제스처) 비평을 수치에
+        묶고, 근거 없는 상투구/자기모순/긴장 단정을 생성 시점에서 차단한다(GROUNDING_RULES)."""
         system = EVAL_TAIL_SYSTEM if compact else EVAL_SYSTEM
         max_tokens = self.tail_max_tokens if compact else self.eval_max_tokens
         prompt = "Critique the final part of this answer." if compact else "Evaluate this answer window."
+        prompt += grounding_block(vision=vision, prosody=prosody)
         content = [
             _video_part(assemble_video_url(jpeg_frames, src_fps=src_fps)),
             _audio_part(assemble_audio_url(pcm, sample_rate=sample_rate)),

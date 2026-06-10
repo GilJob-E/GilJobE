@@ -27,20 +27,24 @@ def build_subscriber(
     room=None,
     executors=None,
     eot_deadline_s: float = 3.0,
+    grounder=None,
+    prosody=None,
 ):
     """windower(critic 주입)+recorder(sinks fan-out)+subscriber를 조립해 반환.
 
     executors=(nv, stt, eval, tail) 주입 시 그 4레인 스레드풀을 공유(앱-레벨), 미주입 시 윈도워가
-    자체 생성. room 미주입 시 실 rtc.Room()(실 접속용)."""
+    자체 생성. room 미주입 시 실 rtc.Room()(실 접속용).
+    grounder/prosody: 객관 그라운딩 레인(선택, inject AND emit). ★grounder는 세션마다 새로
+    만들어 넘길 것 — 윈도워가 수명(reset/close)을 소유한다(재사용 금지)."""
     recorder = SignalRecorder(config.session_id, sinks)
     if executors is None:
-        windower = TurnWindower(critic, eot_deadline_s=eot_deadline_s)
+        windower = TurnWindower(critic, eot_deadline_s=eot_deadline_s, grounder=grounder, prosody=prosody)
     else:
         nv_x, stt_x, eval_x, tail_x = executors
         windower = TurnWindower(
             critic,
             nv_executor=nv_x, stt_executor=stt_x, eval_executor=eval_x, tail_executor=tail_x,
-            eot_deadline_s=eot_deadline_s,
+            eot_deadline_s=eot_deadline_s, grounder=grounder, prosody=prosody,
         )
     return LiveKitSubscriber(
         room if room is not None else _new_room(),
