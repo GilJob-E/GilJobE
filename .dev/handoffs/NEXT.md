@@ -97,23 +97,29 @@
 > `sudo bash -c 'cd /home/hoddukzoa/GilJob_v2/infra && docker compose --env-file /home/hoddukzoa/GilJob_v2/.env -f docker-compose.yml -f docker-compose.media.yml up -d --no-deps --force-recreate livekit'`
 > (node_ip=Tailscale는 원격 브라우저엔 좋지만 호스트/컨테이너 내부 클라이언트엔 불리 — 통합 전 정리 필요).
 
-## 다음 할 일 = Slice 13: **컨테이너 패키징 + PR** ⭐ (북극성 마감 — 메모 `[[mvp-pr-north-star]]`)
-> 핫패스+계약+**우리 서버(PR 본체)**까지 전부 닫혔다(Slice 11+12). 남은 건 패키징 + PR + 그쪽 조율.
-> 먼저 **`slice-11-12-verify-and-server.md`** + 메모리 `giljob-docker-integration-target` 정독.
+- **완료: Slice 13** — 컨테이너 패키징 + **PR #8** ⭐ (북극성 도달). 상세 → `.dev/handoffs/slice-13-container-pr.md`.
+  - **PR #8 OPEN**(`giljob-docker` `feat/analysis-engine-use-giljobe-server`, 06-05): Dockerfile CMD=`python -m giljobe.server`
+    +자작 wrapper 삭제 · 핀 `giljobe @88a4df5`(=GilJobE main HEAD) · DOC_PAIRS 추가 · compose bump.
+    hoddukzoa가 계약 정렬 커밋(`ac2551f`, 06-06)을 얹음 — **main(bab0bc5) 위 0 behind · MERGEABLE · CLEAN**.
+  - **PR 컨테이너 in-container 전 루프 PASS**(evidence `.dev/slice11/pr-container-live.json`): 발행 중 records 실시간(0→13) ·
+    window 전사 11/11 · transcriptFull 282자 verbatim · turn_end.eval 채움 · "Event loop is closed" 0 — wrapper가 실패하던 환경.
+  - **재검증(06-10)**: 계약 77 중 76 pass(실패 1=main에서도 동일=기존 web-static, PR 무관 격리) · docker build 성공 ·
+    `/healthz` 200 스모크 · `/readyz` 503=정상(ready_check가 vLLM 게이트) → ac2551f의 "Not-tested: docker build" 갭 닫음.
 
-1. **컨테이너 패키징**(메모 컨테이너 규약): `Dockerfile`(python:3.12-**slim** + ffmpeg/livekit FFI — alpine 불가, base 예외
-   ADR감) · `requirements.txt`(pyproject deps→pip 변환) · `/healthz`·`/readyz`(이미 구현됨) · **모든 디렉터리 `AGENTS.md`+
-   `CLAUDE.md` 쌍**(그쪽 `tests/contract/test_agent_docs_contract.py` DOC_PAIRS 강제, 영어, "Read the local AGENTS.md first").
-2. **PR**(`github.com/GilJob-E/GilJobE` → `GilJob_v2`/`services/analysis-engine`): 통합 CMD를 **`python -m giljobe.server`**(우리
-   엔트리)로 채택해 그쪽 자작 wrapper 대체 + compose `depends_on: gemma-e4b`·`VLLM_BASE_URL`/`LIVEKIT_*` 주입. PR 메커닉은
-   레포가 hoddukzoa 홈이라 조율.
-3. **그쪽 조율/blocker 보고**: (a) **우리 서버 엔트리로 CMD 교체**(자작 wrapper가 전사 못 냄 — Slice 11 실증) · (b) 스택
-   blocker — 번들 SDK 2.19.1↔서버 1.8.4 비호환(/rtc/v1 404), ai-engine Gemini 크레딧 소진(429), node_ip(컨테이너내부 vs 원격 양립).
-4. (부수) `.dev/slice11/verify_our_server.py`를 tests/ 게이트 e2e로 승격 · 실 사람-웹캠(`[[webcam-path-parked]]`).
+## 다음 할 일 = Slice 14: **PR #8 머지 + 머지 후 정리**
+> 먼저 **`slice-13-container-pr.md`** 정독. MVP 구현·검증·PR까지 완료 — 남은 건 머지(사람 결정)와 후속.
 
-> 환경: 스택 **현재 UP**. **우리 vLLM/livekit 띄우지 말 것**(스택 gemma-e4b 8000·livekit 7880 공유). 라이브 검증은 우리 서버를
-> host 8201로 띄워 스택에 붙이는 패턴(`.dev/slice11/verify_our_server.py`, 키는 api 컨테이너서 읽음). ⚠ livekit node_ip=Tailscale
-> 잔여 LIVE(in-container 무해 확인됨, 통합 전 정리 — `[[webcam-path-parked]]`). ENABLE_SUBSCRIBER는 **플립 안 함**(불필요).
+1. **머지 결정**: 팀 관행=hoddukzoa12 머지(PR #7 전례). 우리 계정도 admin이라 직접 머지 가능 — **사용자에게 확인**.
+   재검증 결과 PR 코멘트 공유도 사용자 결정(세션 권한 정책상 자동 발신 차단됨 — 표는 slice-13 핸드오프 ②).
+2. **머지 후 스택 검증**: 그쪽이 compose up 시 analysis-engine이 PR 이미지로 뜨는지 + 프론트 종단(/analysis/signals) 확인.
+3. **그쪽 blocker 공유**(우리 PR 밖): ai-engine Gemini 429 · node_ip 양립. (SDK 비호환은 upstream이
+   livekit `v1.12.0` bump로 해소 중 — 실측 확인, blocker 강등.)
+4. (post-MVP 후보) `verify_pr_container.py` tests/ 게이트 승격 · 실 사람-웹캠(`[[webcam-path-parked]]`) ·
+   보조 레인 통합 — vision MediaPipe(`[[vision-nonverbal-instability]]`) + audio 프로소디(`[[audio-prosody-grounding]]`) inject-and-emit.
+
+> 환경: **스택 현재 DOWN**(06-10, 컨테이너 0 — node_ip=Tailscale 잔여는 다음 compose up 시 자동 원복). 라이브 검증 필요 시
+> hoddukzoa 스택 기동(타 user 홈 — 인가 필요). giljob-docker 로컬 클론은 원격 PR 브랜치(ac2551f)와 동기.
+> 스택 UP 상태에선 **우리 vLLM/livekit 띄우지 말 것**(공유 gemma-e4b 8000·livekit 7880).
 
 ## 불변 규칙 (매 슬라이스 공통)
 - src = 계층형 subpackage. import: **intra=relative / cross=absolute** (PLAN.md §1, 메모 `[[layered-src-structure]]`).
