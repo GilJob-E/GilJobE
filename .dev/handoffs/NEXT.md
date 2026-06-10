@@ -124,8 +124,12 @@
 1. **머지 결정**: 팀 관행=hoddukzoa12 머지(PR #7 전례). 우리 계정도 admin이라 직접 머지 가능 — **사용자에게 확인**.
    재검증 결과 PR 코멘트 공유도 사용자 결정(세션 권한 정책상 자동 발신 차단됨 — 표는 slice-13 핸드오프 ②).
 2. **머지 후 스택 검증**: 그쪽이 compose up 시 analysis-engine이 PR 이미지로 뜨는지 + 프론트 종단(/analysis/signals) 확인.
-3. **머지 후 그라운딩 레인 컨테이너 반영**(Slice 15 후속): giljob-docker Dockerfile에 `pip install .[vision,prosody]` +
-   MediaPipe 모델 .task 2개 + env 3종. ★parselmouth GPL-3 배포 검토(필요 시 pyworld 폴백) — slice-15 핸드오프 §한계.
+3. **그라운딩 레인 컨테이너 반영 = 사전 작업 완료(06-10)** — giljob-docker 브랜치
+   **`feat/analysis-engine-grounding-lanes`(dd1a359, PR #8 위 스택, 푸시됨)**: 핀 e0671f5 bump(5곳+테스트 상수) ·
+   `giljobe[vision,prosody]` extras · MediaPipe 모델 2개 베이크(/app/models) · `GILJOBE_VISION/PROSODY` 토글 ·
+   계약 가드 신설. **검증: docker build + in-container 레인 활성(USER nobody, detect/extract 실측) + /healthz 200**.
+   ★발견: slim엔 `libegl1+libgles2` 필수(MediaPipe C 바인딩이 CPU 추론에도 GLES dlopen — 없으면 비전 레인 silent 비활성,
+   계약 테스트로 가드). 남은 것: **PR #8 머지(사람 결정) → 이 브랜치 PR 오픈**. ★parselmouth GPL-3 배포 검토 여전(§한계).
 4. **그쪽 blocker 공유**(우리 PR 밖): ai-engine Gemini 429 · node_ip 양립. (SDK 비호환은 upstream이
    livekit `v1.12.0` bump로 해소 중 — 실측 확인, blocker 강등.)
 5. (post-MVP 후보) `verify_pr_container.py` tests/ 게이트 승격 · 실 사람-웹캠(`[[webcam-path-parked]]`) ·
