@@ -17,6 +17,7 @@ from giljobe.analysis.mocks import MockCritic, MockTranscriber
 from giljobe.models.signals import (
     EvaluationSignal,
     NonVerbalSignal,
+    SentenceSignal,
     TranscriptSignal,
     TurnEnd,
 )
@@ -462,3 +463,55 @@ def test_late_video_frames_caught_up_after_window_close():
     # 전사는 마감 시점에 윈도우당 정확히 1회 — catch-up이 stt를 재제출하면 안 된다
     tx_ts = sorted(s.t for s in _by_type(sigs, TranscriptSignal))
     assert tx_ts == [1.5, 4.5, 7.5]
+
+
+def test_external_transcript_mode_sentence_lane_replaces_grids():
+    """외부 전사 모드(PR #13 sideband): nv·stt 3s 그리드 OFF — sideband 이벤트가 문장 경계를
+    만들고, 문장 단위로 4채널(SentenceSignal)이 나온다. end_turn은 미완 델타를 flush로 회수하고
+    문장 텍스트를 t-정렬해 transcript_full로 합본한다(gemma 전사 호출 0)."""
+    sigs = []
+    w = TurnWindower(
+        MockCritic(), on_signal=sigs.append, executor=InlineExecutor(),
+        transcript_source="external",
+    )
+    pcm = b"\x00\x01" * 800  # Int16 짝수 길이 — 경계 스냅 경로가 실제 디코드한다
+    t = 0.0
+    while t < 12.0:
+        w.add_frame(t, b"jpeg")
+        w.add_audio(t, pcm)
+        t += 0.5
+    w.poll(6.0)  # 내부 모드라면 nv/tx가 났을 시점 — 그리드 비활성 확인
+    assert _by_type(sigs, NonVerbalSignal) == []
+    assert _by_type(sigs, TranscriptSignal) == []
+
+    out = w.ingest_realtime_event(
+        {"eventKind": "transcript.completed",
+         "detail": {"transcript": "첫 문장입니다. 둘째 문장.", "itemId": "i1"}},
+        media_now=6.0,
+    )
+    assert out["accepted"] is True and out["sentences"] == 2
+    sents = _by_type(sigs, SentenceSignal)
+    assert [s.text for s in sents] == ["첫 문장입니다.", "둘째 문장."]
+    assert sents[0].nonverbal is not None  # 프레임 슬라이스 → nv read 수행(MockCritic)
+    assert sents[0].source == "punct"
+
+    # 메타데이터 전용 이벤트(현 PR13 중계)도 수용 — 텍스트 없는 발화 경계
+    meta = w.ingest_realtime_event({"eventKind": "transcript.completed"}, media_now=8.5)
+    assert meta["accepted"] is True
+
+    # 미완 델타 → end_turn flush가 마지막 문장으로 회수 + 합본
+    w.ingest_realtime_event(
+        {"type": "analysis.transcript.delta", "detail": {"transcript": "잔여 조각", "itemId": "i2"}},
+        media_now=10.0,
+    )
+    te = w.end_turn(12.0)
+    sents = _by_type(sigs, SentenceSignal)
+    assert sents[-1].source == "flush" and sents[-1].text == "잔여 조각"
+    assert te.transcript_full == "첫 문장입니다. 둘째 문장. 잔여 조각"
+
+
+def test_internal_mode_rejects_realtime_events():
+    """내부 전사 모드(기본)는 sideband 이벤트를 정중히 무시 — 기존 동작 무변경 가드."""
+    w = TurnWindower(MockCritic(), executor=InlineExecutor())
+    out = w.ingest_realtime_event({"eventKind": "transcript.completed"}, media_now=3.0)
+    assert out == {"accepted": False, "reason": "internal_transcript_mode"}

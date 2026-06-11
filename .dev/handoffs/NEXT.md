@@ -131,8 +131,14 @@
    실측(`qa/stt-comparison.json`, CPU int8): **large-v3-turbo full-clip이 사실상 완벽**(7.7s/38s),
    3s-windowed는 small 0.76s/win(품질 gemma급) vs turbo 3.2s/win(품질 월등).
    gemma 3s는 숫자 오인식("46%"→"6%") 포함 최다 오류.
-2. **LLM 핸드오프 JSON 스키마**(수치 평균화·eval 프롬프트 간소화·분석 텍스트 포함) — 미착수.
-   Gemini Live 결정에 따라 재평가.
+2. **LLM 핸드오프 JSON 스키마**(수치 평균화·eval 프롬프트 간소화·분석 텍스트 포함) —
+   `turn_handoff` v1 프로토타입 완료(.dev/llm_handoff/, giljob-docker qa/handoff-schema-notes.md).
+   ✦ **문장 레인 구현 완료(2026-06-11 밤, 사용자 지시 "PR13 기준")**: giljob-docker PR #13
+   (OpenAI Realtime sideband — Gemini Live 아님, 미머지 OPEN)의 `/realtime/turn-events` 계약을
+   받는 **외부 전사 모드**(`GILJOBE_TRANSCRIPT_SOURCE=external`) — gemma 3s stt·nv 그리드 OFF,
+   문장 경계(pipeline/sentences.py: 텍스트 1차+쉼 스냅+타임아웃 백스톱) 단위로 4채널을 잘라
+   `sentence` 레코드 emit. 라이브 실측(kor/vid33 + 합성 sideband): 이벤트→레코드 0.04~1.31s,
+   stop→turn_end ≤1.1s, transcript_full=문장 합본. 기본 internal=동작 무변경.
 3. **테일 레이턴시 추적** — 미착수. 관측치: 윈도당 처리 꼬리 ~6-9s(유휴 GPU), stop→flush 0.03s.
 > ✅ NV 레인 버그 해결(2026-06-11, giljob-docker `qa/nv-lane-investigation.md`): "장수 프로세스"는
 > 교란변수 — 진짜 원인은 poll 벽시계 vs 버스트 딜리버리 비디오의 경쟁(마감 때 프레임 미도착 →

@@ -24,10 +24,11 @@ import threading
 from collections.abc import Callable
 from typing import Protocol
 
-from giljobe.models.records import EvalRecord, TurnEndRecord, WindowRecord
+from giljobe.models.records import EvalRecord, SentenceRecord, TurnEndRecord, WindowRecord
 from giljobe.models.signals import (
     EvaluationSignal,
     NonVerbalSignal,
+    SentenceSignal,
     TranscriptSignal,
     TurnEnd,
 )
@@ -140,6 +141,8 @@ class SignalRecorder:
             return self._on_window_signal(sig.t, sig.window_s, tx=sig)
         if isinstance(sig, EvaluationSignal):  # 발화중 풀 평가(채널②) → eval 레코드(즉시)
             return [EvalRecord.from_signal(self.session_id, sig).to_dict()]
+        if isinstance(sig, SentenceSignal):  # 문장 레인(외부 전사 모드) — 완결 단위, 페어링 불요
+            return [SentenceRecord.from_signal(self.session_id, sig).to_dict()]
         if isinstance(sig, TurnEnd):
             return self._on_turn_end(sig)
         return []  # 모르는 신호는 무시(미래 타입에 안전)

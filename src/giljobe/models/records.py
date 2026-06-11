@@ -15,6 +15,7 @@ from dataclasses import dataclass
 from giljobe.models.signals import (
     EvaluationSignal,
     NonVerbalSignal,
+    SentenceSignal,
     TranscriptSignal,
     TurnEnd,
 )
@@ -102,6 +103,51 @@ class EvalRecord:
             "t": self.t,
             "window_s": self.window_s,
             "eval": self.eval,
+        }
+
+
+@dataclass
+class SentenceRecord:
+    """문장 레코드(외부 전사 모드) — 한 문장 구간의 전사+실측+nv read 묶음. 페어링 없이
+    완결 단위로 도착 즉시 송출. t=구간 중심(window/eval과 같은 정렬 기준)."""
+
+    session_id: str
+    t: float
+    start_s: float
+    end_s: float
+    text: str
+    source: str
+    speech: dict | None
+    visual: dict | None
+    nonverbal: dict | None
+    type: str = "sentence"
+
+    @classmethod
+    def from_signal(cls, session_id: str, sig: SentenceSignal) -> SentenceRecord:
+        return cls(
+            session_id=session_id,
+            t=round((sig.start_s + sig.end_s) / 2, 2),
+            start_s=sig.start_s,
+            end_s=sig.end_s,
+            text=sig.text,
+            source=sig.source,
+            speech=sig.speech,
+            visual=sig.visual,
+            nonverbal=sig.nonverbal,
+        )
+
+    def to_dict(self) -> dict:
+        return {
+            "type": self.type,
+            "session_id": self.session_id,
+            "t": self.t,
+            "start_s": self.start_s,
+            "end_s": self.end_s,
+            "text": self.text,
+            "source": self.source,
+            "speech": self.speech,
+            "visual": self.visual,
+            "nonverbal": self.nonverbal,
         }
 
 

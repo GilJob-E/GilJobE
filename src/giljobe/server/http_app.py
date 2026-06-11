@@ -68,6 +68,17 @@ async def _signals(req: web.Request) -> web.Response:
     return _json(service.signals(session_id), status=200)
 
 
+async def _realtime_turn_events(req: web.Request) -> web.Response:
+    """PR #13 sideband 인그레스 — API가 중계하는 Realtime 턴 이벤트(eventKind 메타데이터,
+    detail 확장 시 transcript 포함)를 외부 전사 모드의 문장 레인에 흘린다. 원문 전사는
+    응답·로그에 싣지 않는다. 활성 세션이 없으면 무시하고 200(포워더는 베스트에포트)."""
+    body = await _read_json(req)
+    if body is None:
+        return _json({"error": "invalid_json"}, status=400)
+    service: AnalysisService = req.app["service"]
+    return _json(service.ingest_realtime_event(body), status=200)
+
+
 def make_app(service: AnalysisService, *, ready_check: Callable[[], bool] | None = None) -> web.Application:
     """라우트를 service에 배선한 aiohttp 앱. 종료 시 service.aclose로 활성 세션 정리."""
     app = web.Application()
@@ -79,6 +90,7 @@ def make_app(service: AnalysisService, *, ready_check: Callable[[], bool] | None
         web.post("/subscriber/start", _start),
         web.post("/subscriber/stop", _stop),
         web.get("/signals", _signals),
+        web.post("/realtime/turn-events", _realtime_turn_events),
     ])
     app.on_cleanup.append(_on_cleanup)
     return app

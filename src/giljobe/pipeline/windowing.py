@@ -39,14 +39,27 @@ from collections.abc import Callable
 from concurrent.futures import Future, ThreadPoolExecutor, wait
 from typing import Protocol
 
+from giljobe.analysis.prosody import silence_run_positions
 from giljobe.models.signals import (
     EvaluationSignal,
     NonVerbalSignal,
+    SentenceSignal,
     TranscriptSignal,
     TurnEnd,
 )
 
+from .sentences import RealtimeTurnTracker, Sentence
+
 logger = logging.getLogger(__name__)
+
+NV_FRAME_CAP = 12  # 문장 nv 호출당 프레임 상한(긴 문장의 prefill 비용 캡 — 균등 샘플)
+
+
+def _cap_frames(frames: list[bytes], cap: int = NV_FRAME_CAP) -> list[bytes]:
+    if len(frames) <= cap:
+        return frames
+    step = len(frames) / cap
+    return [frames[int(i * step)] for i in range(cap)]
 
 # 윈도워가 on_signal/drain으로 내보내는 신호 유니온(소비자=emit/Sink가 t로 정렬·직렬화).
 Signal = NonVerbalSignal | TranscriptSignal | EvaluationSignal | TurnEnd
@@ -127,6 +140,8 @@ class TurnWindower:
         eot_deadline_s: float = 3.0,
         grounder: _Grounder | None = None,
         prosody: _Prosody | None = None,
+        transcript_source: str = "internal",
+        sentence_timeout_s: float = 10.0,
     ) -> None:
         self.ev = critic
         self.on_signal = on_signal
@@ -135,6 +150,15 @@ class TurnWindower:
         self.src_fps = src_fps
         self.sample_rate = sample_rate
         self.eot_deadline_s = eot_deadline_s  # compact tail/최종 stt를 기다리는 안전 상한(backstop)
+        # 외부 전사 모드(PR #13 Realtime sideband): 전사가 /realtime/turn-events로 들어오므로
+        # gemma 전사 호출과 3s nv·stt 그리드를 끄고, 문장 경계 단위 레인으로 대체한다.
+        # 미디어 버퍼(frames·audio)는 그대로 — 프로소디/비전/nv 측정의 재료다.
+        self.external_transcript = transcript_source == "external"
+        self._sent_tracker = (
+            RealtimeTurnTracker(timeout_s=sentence_timeout_s, snapper=self._snap_to_pause)
+            if self.external_transcript
+            else None
+        )
         # 객관 그라운딩 레인(선택, inject AND emit). None이면 기존 동작 그대로(레인 비활성).
         # grounder 수명은 윈도워가 함께 구동한다(reset/close) — 세션마다 새로 만들어 주입.
         self.grounder = grounder
@@ -340,6 +364,81 @@ class TurnWindower:
         sig.objective_visual = vision
         return sig
 
+    # ── 문장 레인 (외부 전사 모드 — PR #13 Realtime sideband) ──
+    def _snap_to_pause(self, t_raw: float) -> float:
+        """경계 원시값(이벤트 도착 시점 미디어 시계)을 우리가 받은 오디오의 실측 휴지 시작점으로
+        스냅(±0.7s) — 전송 지연(수백 ms)을 음향 ground truth로 보정한다(boundary_sim 검증 설계)."""
+        with self._lock:
+            pcm = b"".join(p for (t, p) in self._audio if t_raw - 0.8 <= t < t_raw + 0.8)
+            base = min((t for (t, _) in self._audio if t >= t_raw - 0.8), default=None)
+        if not pcm or base is None:
+            return t_raw
+        try:
+            runs = silence_run_positions(pcm, sample_rate=self.sample_rate)
+        except Exception:  # noqa: BLE001 - 스냅은 정밀화일 뿐 — 실패해도 원시 경계로 진행
+            logger.exception("boundary snap 실패(원시 경계 사용)")
+            return t_raw
+        if not runs:
+            return t_raw
+        nearest = min((base + s for (s, _) in runs), key=lambda x: abs(x - t_raw))
+        return nearest if abs(nearest - t_raw) <= 0.7 else t_raw
+
+    def ingest_realtime_event(self, payload: dict, *, media_now: float) -> dict:
+        """sideband 턴 이벤트 1건 소비(서버 루프에서 호출). PR #13 중계 레코드(eventKind 메타데이터)와
+        detail 확장(transcript·itemId 포함) 모두 수용 — 텍스트는 있으면 쓰고 없으면 시간만 쓴다.
+        확정된 문장은 즉시 문장 레인에 제출된다. 원문 전사는 로깅하지 않는다(토큰·전사 비노출 규약)."""
+        if self._sent_tracker is None:
+            return {"accepted": False, "reason": "internal_transcript_mode"}
+        detail = payload.get("detail")
+        if not isinstance(detail, dict):
+            detail = {}
+        kind = str(payload.get("eventKind") or payload.get("normalizedType") or payload.get("type") or "")
+        text = detail.get("transcript") or detail.get("text") or payload.get("transcript")
+        item_id = detail.get("itemId") or payload.get("itemId")
+        sentences = self._sent_tracker.ingest(
+            kind, media_now=media_now,
+            item_id=str(item_id) if item_id else None,
+            text=str(text) if text else None,
+        )
+        self._submit_sentences(sentences)
+        return {"accepted": True, "eventKind": kind[:60], "sentences": len(sentences)}
+
+    def _submit_sentences(self, sentences: list[Sentence]) -> None:
+        for s in sentences:
+            with self._tx_lock:  # turn_end transcript_full 합본 재료(문장 start로 t-정렬)
+                if s.text:
+                    self._transcripts[s.start_s] = s.text
+            # nv 레인 재사용(그리드 nv가 꺼져 있어 비어 있음) + track_nv → end_turn이 기다려
+            # 마지막 문장이 TurnEnd 전에 도착한다(레코드 순서 보장).
+            self._submit(self._nv_exec, self._do_sentence, s, track_nv=True)
+
+    def _do_sentence(self, s: Sentence):
+        """문장 워커 — 한 문장 구간으로 4채널을 자른다: 비전 집계(grounder는 임의 구간 지원),
+        프로소디, nv VLM read(프레임 있을 때만, 균등 샘플 캡). 실패는 채널별 None 강등."""
+        with self._lock:
+            frames, pcm = self._slice(s.start_s, s.end_s)
+        frames = _cap_frames(frames)
+        vision = self._window_vision(s.start_s, s.end_s)
+        speech = self._window_prosody(pcm)
+        nonverbal = None
+        if frames:
+            dur = max(s.end_s - s.start_s, 0.5)
+            try:
+                nv = self.ev.read_nonverbal(
+                    frames, pcm, t=(s.start_s + s.end_s) / 2, window_s=dur,
+                    src_fps=max(0.5, len(frames) / dur), sample_rate=self.sample_rate,
+                    vision=vision,
+                )
+                nonverbal = {"state": nv.state, "intensity": nv.intensity, "note": nv.note}
+            except Exception:  # noqa: BLE001 - nv 실패는 문장 레코드에서 해당 채널만 누락
+                logger.exception("sentence nv read failed [%.1f, %.1f)", s.start_s, s.end_s)
+        sig = SentenceSignal(
+            start_s=s.start_s, end_s=s.end_s, text=s.text, source=s.source,
+            speech=speech, visual=vision, nonverbal=nonverbal,
+        )
+        self._emit(sig)
+        return sig
+
     # ── 스케줄 ──
     def _collect_nv_catch_up(self) -> list[tuple[float, float, list[bytes], bytes]]:
         """프레임 부재로 NV를 건너뛴 윈도우 중 프레임이 늦게 도착한 것을 회수(호출자가 _lock 보유).
@@ -368,7 +467,8 @@ class TurnWindower:
         nv_jobs: list[tuple[float, float, list[bytes], bytes]] = []
         eval_jobs: list[tuple[float, float, list[bytes], bytes]] = []
         with self._lock:
-            while self._next_nv_end <= now_s:
+            # 외부 전사 모드: 3s nv·stt 그리드 비활성 — 문장 레인이 대체(eval 그리드는 유지).
+            while not self.external_transcript and self._next_nv_end <= now_s:
                 start = self._next_nv_end - self.nv_w
                 self._next_nv_end += self.nv_w  # 제출 *전에* 전진 → 동시 poll 중복 방지
                 frames, pcm = self._slice(start, start + self.nv_w)
@@ -393,6 +493,9 @@ class TurnWindower:
         for (start, dur, frames, pcm) in eval_jobs:
             if frames and pcm:  # 평가는 영상+오디오 둘 다 필요
                 self._submit(self._eval_exec, self._do_eval, start, dur, frames, pcm)
+        # 외부 전사 모드: 타임아웃 백스톱 — completed 없이 오래 끌면 누적 델타로 강제 경계.
+        if self._sent_tracker is not None:
+            self._submit_sentences(self._sent_tracker.tick(now_s))
 
     def end_turn(self, now_s: float) -> TurnEnd:
         """발화 종료: 답변 *마지막 구간*만 **compact 평가**(짧은 출력)해 지연을 묶고, 윈도우
@@ -408,15 +511,15 @@ class TurnWindower:
         nv_jobs: list[tuple[float, float, list[bytes], bytes]] = []
         tail_jobs: list[tuple[float, float, list[bytes], bytes]] = []
         with self._lock:
-            # nv·stt: due 윈도우 (저지연이라 그대로)
-            while self._next_nv_end <= now_s:
+            # nv·stt: due 윈도우 (저지연이라 그대로). 외부 전사 모드는 그리드 대신 문장 레인.
+            while not self.external_transcript and self._next_nv_end <= now_s:
                 start = self._next_nv_end - self.nv_w
                 self._next_nv_end += self.nv_w
                 frames, pcm = self._slice(start, start + self.nv_w)
                 nv_jobs.append((start, self.nv_w, frames, pcm))
             # nv·stt 트레일링 부분윈도우(최종 flush) — 0.5s 미만 자투리는 무시
             nv_tail_start = self._next_nv_end - self.nv_w
-            if now_s - nv_tail_start > 0.5:
+            if not self.external_transcript and now_s - nv_tail_start > 0.5:
                 frames, pcm = self._slice(nv_tail_start, now_s)
                 nv_jobs.append((nv_tail_start, now_s - nv_tail_start, frames, pcm))
             # 평가 compact tail: 완료된 커버리지 끝~now.
@@ -443,6 +546,9 @@ class TurnWindower:
                 self._submit(self._stt_exec, self._do_stt, start, dur, pcm, track_stt=True)
         for (start, dur, frames, pcm) in nv_catch_up:  # nv만 — stt는 마감 때 이미 제출됨
             self._submit(self._nv_exec, self._do_nv, start, dur, frames, pcm, track_nv=True)
+        # 외부 전사 모드: 미완 델타 잔여를 마지막 문장으로 flush(track_nv → 아래 wait가 기다림).
+        if self._sent_tracker is not None:
+            self._submit_sentences(self._sent_tracker.flush(now_s))
         # transcript_full은 stt를, recorder의 nv·전사 페어링은 nv를, compact eval은 tail을 기다린다.
         # nv를 기다려야 트레일링 윈도우의 NonVerbalSignal이 TurnEnd emit *전에* 도착해 소비자(Sink)가
         # nv·전사를 한 레코드로 병합한다(안 기다리면 nv가 늦게 와 nonverbal=None 부분 레코드로 새고 nv 유실).
@@ -500,6 +606,8 @@ class TurnWindower:
             self._eval_done_ends = set()
         if self.grounder is not None:  # dense 행/epoch 초기화(이전 턴 in-flight 결과 차단)
             self.grounder.reset()
+        if self._sent_tracker is not None:  # 이전 턴 델타 누적/경계 상태 초기화
+            self._sent_tracker.reset()
         with self._tx_lock:
             self._transcripts = {}
         with self._fut_lock:

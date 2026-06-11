@@ -207,6 +207,36 @@ def _energy_metrics(samples: np.ndarray, sample_rate: int) -> dict:
     }
 
 
+def silence_run_positions(pcm: bytes, *, sample_rate: int = SAMPLE_RATE) -> list[tuple[float, float]]:
+    """Int16 PCM → (시작초, 길이초) 휴지 목록 — 레인과 같은 정의(99분위-18dB, 25ms/10ms RMS).
+
+    `_silence_runs`는 길이만 반환(쉼 *분포* 집계용)하지만, 문장 경계 스냅(pipeline/sentences.py)은
+    *위치*가 필요해 모듈 함수로 노출한다. numpy만 사용(파셀마우스 불요) — 어디서든 가볍게 호출."""
+    samples = np.frombuffer(pcm, dtype=np.int16).astype(np.float64) / 32768.0
+    n = 1 + max(0, (len(samples) - RMS_FRAME) // RMS_HOP)
+    if n < 8:
+        return []
+    idx = np.arange(RMS_FRAME)[None, :] + RMS_HOP * np.arange(n)[:, None]
+    rms = np.sqrt(np.mean(samples[idx] ** 2, axis=1))
+    peak = float(rms.max())
+    if peak <= 1e-8:
+        return []
+    db = 20.0 * np.log10(np.maximum(rms, 1e-10) / peak)
+    threshold = float(np.percentile(db, 99)) - 18.0
+    silent = db < threshold
+    runs: list[tuple[float, float]] = []
+    start: int | None = None
+    for i, s in enumerate(silent):
+        if s and start is None:
+            start = i
+        elif not s and start is not None:
+            dur = (i - start) * RMS_HOP / sample_rate
+            if dur >= JUNCTURE_S:
+                runs.append((start * RMS_HOP / sample_rate, dur))
+            start = None
+    return runs
+
+
 def describe_vocal(m: dict) -> str:
     """프로소디 수치 → 프롬프트 주입용 한국어 라벨 라인(집계+참조범위, 해석 라벨 없음 —
     .dev/vision/README.md 필수 조건 2: "'긴장' 같은 해석 라벨은 미리 붙이지 않는다")."""

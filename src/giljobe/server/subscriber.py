@@ -236,6 +236,10 @@ class LiveKitSubscriber:
             return 0.0
         return self._loop.time() - self._t0
 
+    def media_now(self) -> float:
+        """공개 미디어 시계 — 외부 이벤트(realtime sideband)를 윈도워 타임라인에 정렬할 때 쓴다."""
+        return self._media_now()
+
     async def _poll_loop(self) -> None:
         """주기적으로 windower.poll(미디어시계) — 프레임이 끊겨도 완성 윈도우를 flush(타이머 구동)."""
         while True:

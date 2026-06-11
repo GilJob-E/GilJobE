@@ -68,6 +68,26 @@ class TranscriptSignal:
 
 
 @dataclass
+class SentenceSignal:
+    """문장 레인(외부 전사 모드) — 한 *문장* 구간의 4채널 묶음(전사·프로소디·비전·nv read).
+
+    3s 그리드 대신 문장 경계(pipeline/sentences.py — Realtime sideband 전사 기반)로 잘린
+    단위라 "이 문장을 말할 때 어땠나"가 한 신호에 담긴다. 외부 전사 모드에서 nv·전사
+    윈도우 페어링을 대체한다(측정치 shape은 eval의 objective_*와 동일 — 소비자 일관성)."""
+
+    start_s: float
+    end_s: float
+    text: str              # 문장 전사("" = sideband가 메타데이터만 중계한 경우)
+    source: str = "punct"  # punct|utterance|timeout|flush — 경계 출처(품질/디버그용)
+    speech: dict | None = None     # 프로소디 실측(objective_vocal과 같은 shape)
+    visual: dict | None = None     # 비전 실측(objective_visual과 같은 shape)
+    nonverbal: dict | None = None  # VLM read {state, intensity, note}
+
+    def to_dict(self) -> dict:
+        return asdict(self)
+
+
+@dataclass
 class TurnEnd:
     """턴 종료 이벤트 — 윈도워가 /turn/end에서 1회 낸다. per-window 신호와 달리 답변 전체를
     종합한다: t-정렬 전사 합본(면접관 LLM의 실제 입력)과 선택 compact eval(마지막 구간 비평).

@@ -174,6 +174,16 @@ class AnalysisService:
             logger.info("subscriber 종료 session=%s records=%d", sess.session_id, len(sess.sink.records()))
         return {"status": "stopped"}
 
+    def ingest_realtime_event(self, payload: dict) -> dict:
+        """PR #13 sideband 턴 이벤트 — 활성 세션의 윈도워에 미디어 시계와 함께 전달.
+        활성 세션이 없거나(턴 사이) 내부 전사 모드면 무시(포워더는 베스트에포트 — 거절 아님)."""
+        sess = self._active
+        if sess is None:
+            return {"accepted": False, "reason": "no_active_session"}
+        return sess.subscriber.windower.ingest_realtime_event(
+            payload, media_now=sess.subscriber.media_now(),
+        )
+
     def signals(self, session_id: str | None = None) -> dict:
         """요청 session_id의 레코드를 래퍼 모양으로 — 활성·직전(_last) 둘 다 룩업(새 턴이 시작돼도
         직전 답변이 _last에 남아있으면 회수 가능). 미스매치면 빈 페이로드. 미지정이면 활성 우선."""
