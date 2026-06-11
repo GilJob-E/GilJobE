@@ -204,31 +204,41 @@ def flag_conflicts(evals: list[dict]) -> list[dict]:
 
 # ── prompt_block 렌더 + 조립 ─────────────────────────────────────────────────
 
-def render_prompt_block(handoff: dict, *, flags: list[dict]) -> str:
-    """ai-engine이 그대로 끼울 한국어 블록(전사 제외 — lastAnswer는 기존 경로 유지).
-    describe_vocal/describe_visual은 프로덕션 함수 재사용 — 참조범위·관측불가 차단 문구 포함."""
-    parts: list[str] = []
+def render_prompt_block(handoff: dict, *, flags: list[dict]) -> list[str]:
+    """ai-engine이 '\\n'.join으로 끼울 한국어 블록(전사 제외 — lastAnswer는 기존 경로 유지).
+    JSON에는 **줄 배열**로 싣는다 — \\n 이스케이프 한 줄 덩어리는 QA에서 사람이 못 읽는다.
+    빈 문자열 = 섹션 구분. describe_vocal/visual은 프로덕션 함수 재사용(참조범위·차단 문구 포함)."""
+    lines: list[str] = []
+
+    def section(header: str, body: list[str]) -> None:
+        if lines:
+            lines.append("")  # 섹션 사이 빈 줄
+        lines.append(header)
+        lines.extend(body)
+
     sp = handoff.get("speech")
     if sp:
-        parts.append(f"[음성 전달 실측치 — 발화 {sp['duration_s']}초, {sp['windows']}개 구간 집계]\n"
-                     + describe_vocal(sp))
+        section(f"[음성 전달 실측치 — 발화 {sp['duration_s']}초, {sp['windows']}개 구간 집계]",
+                describe_vocal(sp).split("\n"))
     vis = handoff.get("visual")
     if vis and (desc := describe_visual(vis)):
-        parts.append("[시각 실측치 — MediaPipe]\n" + desc)
+        section("[시각 실측치 — MediaPipe]", desc.split("\n"))
     nv = handoff.get("nonverbal", {})
     if nv.get("windows"):
         states = ", ".join(f"{s} {int(r * 100)}%" for s, r in nv["states"].items())
-        parts.append(f"[비언어 상태 분포(3초 단위 read)] {states} · 평균 강도 {nv['intensity_mean']}")
+        section(f"[비언어 상태 분포 — 3초 단위 read {nv['windows']}개]",
+                [f"- 상태: {states} · 평균 강도 {nv['intensity_mean']}"])
     concerns = handoff.get("analysis", {}).get("concerns", [])[:PROMPT_CONCERNS]
     if concerns:
-        lines = [f"- ({int(c['window'][0])}~{int(c['window'][1])}초) {c['text']}" for c in concerns]
-        parts.append("[면접관 비평 — 구간별 핵심 우려]\n" + "\n".join(lines))
+        section("[면접관 비평 — 구간별 핵심 우려]",
+                [f"- ({int(c['window'][0])}~{int(c['window'][1])}초) {c['text']}" for c in concerns])
     # 비평이 실측과 모순되면(예: '단조' 주장 vs sd≥2) 수치가 정본임을 소비자 LLM에 명시 —
     # eval 프롬프트 간소화(vocal/visual 텍스트 축 제거)로 근본 해소되기 전까지의 방어선.
     if flags:
-        parts.append("[실측 우선 규칙] 위 비평 중 억양·음량·속도 등 전달력 묘사가 실측치와 다르면 "
-                     "실측치를 따를 것(예: F0 표준편차 2 semitone 미만일 때만 '단조').")
-    return "\n\n".join(parts)
+        section("[실측 우선 규칙]",
+                ["위 비평 중 억양·음량·속도 등 전달력 묘사가 실측치와 다르면 실측치를 따를 것"
+                 "(예: F0 표준편차 2 semitone 미만일 때만 '단조')."])
+    return lines
 
 
 def build_turn_handoff(payload: dict) -> dict:
@@ -251,13 +261,13 @@ def build_turn_handoff(payload: dict) -> dict:
         "analysis": collect_analysis(evals),
     }
     flags = flag_conflicts(evals)
-    handoff["prompt_block"] = render_prompt_block(handoff, flags=flags)
+    handoff["prompt_block"] = render_prompt_block(handoff, flags=flags)  # 줄 배열 — 소비자가 join
     handoff["meta"] = {
         "eval_windows": len(evals),
         "nv_windows": handoff["nonverbal"]["windows"],
         "stt_windows": sum(1 for w in windows if w.get("transcript", "").strip()),
         "transcript_chars": len(transcript),
-        "prompt_block_chars": len(handoff["prompt_block"]),
+        "prompt_block_chars": len("\n".join(handoff["prompt_block"])),
         "flags": flags,
     }
     return handoff
