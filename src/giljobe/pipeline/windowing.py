@@ -169,6 +169,9 @@ class TurnWindower:
         self._audio: list[tuple[float, bytes]] = []
         self._next_nv_end = nonverbal_window_s
         self._next_eval_end = eval_window_s
+        # 마감 시점에 프레임이 없어 NV를 건너뛴 윈도우 start들 — 프레임 늦도착 시 catch-up 대상.
+        # (GOP 버스트/지터로 비디오가 오디오·poll시계보다 늦는 실측 사례: qa/nv-lane-investigation.md)
+        self._nv_starved: list[float] = []
         self._eval_covered_until = 0.0      # 풀 평가가 *연속 성공* 완료된 끝 시각 → eot compact tail 시작점
         self._eval_done_ends: set[float] = set()  # 성공한 풀 윈도우 end(그리드) — 연속 prefix 계산용
         self._transcripts: dict[float, str] = {}  # window_start → 전사 텍스트(turn_end 합본 재료)
@@ -338,6 +341,28 @@ class TurnWindower:
         return sig
 
     # ── 스케줄 ──
+    def _collect_nv_catch_up(self) -> list[tuple[float, float, list[bytes], bytes]]:
+        """프레임 부재로 NV를 건너뛴 윈도우 중 프레임이 늦게 도착한 것을 회수(호출자가 _lock 보유).
+
+        ★NV 레인 버그 근본 수정: LiveKit 딜리버리가 버스트(키프레임 대기·GOP)면 프레임이 윈도우
+        마감 *후*에 도착하는데, 기존엔 마감 시점 슬라이스가 비면 그리드가 전진하며 그 윈도우를
+        영구 포기했다(실턴 13/13 nonverbal=null). 늦은 NV는 안 하는 것보다 낫고(신호는 t로
+        자기기술 — recorder가 전사와 페어링·소비자가 정렬), 정시 경로엔 지연 추가가 0이다."""
+        if not self._nv_starved:
+            return []
+        jobs: list[tuple[float, float, list[bytes], bytes]] = []
+        still: list[float] = []
+        for start in self._nv_starved:
+            frames, pcm = self._slice(start, start + self.nv_w)
+            if frames:
+                jobs.append((start, self.nv_w, frames, pcm))
+            else:
+                still.append(start)
+        self._nv_starved = still
+        if jobs:
+            logger.info("nv catch-up: 늦게 도착한 프레임으로 %d개 윈도우 회수", len(jobs))
+        return jobs
+
     def poll(self, now_s: float) -> None:
         """now_s까지 완성된 윈도우들을 백그라운드 추론에 제출(즉시 반환, race-free)."""
         nv_jobs: list[tuple[float, float, list[bytes], bytes]] = []
@@ -347,18 +372,24 @@ class TurnWindower:
                 start = self._next_nv_end - self.nv_w
                 self._next_nv_end += self.nv_w  # 제출 *전에* 전진 → 동시 poll 중복 방지
                 frames, pcm = self._slice(start, start + self.nv_w)
+                if not frames:  # 마감인데 프레임 미도착 — 늦게 오면 catch-up으로 회수
+                    self._nv_starved.append(start)
                 nv_jobs.append((start, self.nv_w, frames, pcm))
             while self._next_eval_end <= now_s:
                 start = self._next_eval_end - self.eval_w
                 self._next_eval_end += self.eval_w
                 frames, pcm = self._slice(start, start + self.eval_w)
                 eval_jobs.append((start, self.eval_w, frames, pcm))
+            nv_catch_up = self._collect_nv_catch_up()
         # nv·stt는 같은 윈도우 집합 — 한 윈도우에서 둘 다 제출(레코드별 nv·전사 페어링).
         for (start, dur, frames, pcm) in nv_jobs:
             if frames:  # 비디오 없는 구간은 비언어 read 스킵
                 self._submit(self._nv_exec, self._do_nv, start, dur, frames, pcm, track_nv=True)
             if pcm:  # 오디오 없는 구간은 전사 스킵
                 self._submit(self._stt_exec, self._do_stt, start, dur, pcm, track_stt=True)
+        # catch-up은 nv만 — stt는 마감 때 pcm으로 이미 제출됐다(재제출=중복 전사).
+        for (start, dur, frames, pcm) in nv_catch_up:
+            self._submit(self._nv_exec, self._do_nv, start, dur, frames, pcm, track_nv=True)
         for (start, dur, frames, pcm) in eval_jobs:
             if frames and pcm:  # 평가는 영상+오디오 둘 다 필요
                 self._submit(self._eval_exec, self._do_eval, start, dur, frames, pcm)
@@ -397,6 +428,9 @@ class TurnWindower:
             if tail_dur > 0.0 and (whole_answer or tail_dur > 1.0):
                 frames, pcm = self._slice(tail_start, now_s)
                 tail_jobs.append((tail_start, tail_dur, frames, pcm))
+            # 발화 중 프레임 늦도착으로 굶은 NV 윈도우 최종 회수 — track_nv라 아래 wait가 기다려
+            # recorder가 TurnEnd 전에 전사와 페어링한다(poll의 catch-up과 같은 메커니즘).
+            nv_catch_up = self._collect_nv_catch_up()
         # 제출 (lock 밖). compact tail → 전용 tail 레인(절대 경합 없음).
         tail_fut: Future | None = None
         for (start, dur, frames, pcm) in tail_jobs:
@@ -407,6 +441,8 @@ class TurnWindower:
                 self._submit(self._nv_exec, self._do_nv, start, dur, frames, pcm, track_nv=True)
             if pcm:
                 self._submit(self._stt_exec, self._do_stt, start, dur, pcm, track_stt=True)
+        for (start, dur, frames, pcm) in nv_catch_up:  # nv만 — stt는 마감 때 이미 제출됨
+            self._submit(self._nv_exec, self._do_nv, start, dur, frames, pcm, track_nv=True)
         # transcript_full은 stt를, recorder의 nv·전사 페어링은 nv를, compact eval은 tail을 기다린다.
         # nv를 기다려야 트레일링 윈도우의 NonVerbalSignal이 TurnEnd emit *전에* 도착해 소비자(Sink)가
         # nv·전사를 한 레코드로 병합한다(안 기다리면 nv가 늦게 와 nonverbal=None 부분 레코드로 새고 nv 유실).
@@ -459,6 +495,7 @@ class TurnWindower:
             self._audio.clear()
             self._next_nv_end = self.nv_w
             self._next_eval_end = self.eval_w
+            self._nv_starved = []
             self._eval_covered_until = 0.0
             self._eval_done_ends = set()
         if self.grounder is not None:  # dense 행/epoch 초기화(이전 턴 in-flight 결과 차단)

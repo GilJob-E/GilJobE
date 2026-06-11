@@ -436,3 +436,29 @@ def test_partial_executor_injection_rejected():
             TurnWindower(MockCritic(), nv_executor=only_nv)  # stt/eval/tail 누락
     finally:
         only_nv.shutdown(wait=False)
+
+
+def test_late_video_frames_caught_up_after_window_close():
+    """★회귀(NV 레인 버그, giljob-docker qa/nv-lane-investigation.md): 비디오가 GOP 버스트·
+    네트워크 지터로 윈도우 마감 *후* 도착하면 마감 시점 슬라이스가 비어 NV가 영구 스킵됐다
+    (kor 실턴 13/13 nonverbal=null). 늦게 도착한 프레임은 다음 poll/end_turn에서 catch-up
+    제출돼야 한다 — 늦은 NV가 안 하는 것보다 낫다(레코드는 t 자기기술, 소비자가 정렬)."""
+    sigs = []
+    w = TurnWindower(MockCritic(), on_signal=sigs.append, executor=InlineExecutor())
+    t = 0.0
+    while t < 9.0:  # 오디오는 실시간 도착(현실: 오디오는 부드럽고 비디오만 버스트)
+        w.add_audio(t, b"pcm")
+        t += 0.5
+    w.poll(3.2)                    # [0,3) 마감 — 프레임 미도착(버스트 지연)
+    w.add_frame(0.5, b"jpeg")      # [0,3) 프레임이 늦게 도착
+    w.add_frame(1.5, b"jpeg")
+    w.poll(6.2)                    # [3,6) 마감 + [0,3) catch-up 기대
+    w.add_frame(4.0, b"jpeg")      # [3,6) 프레임 늦게 도착
+    w.end_turn(9.0)                # end_turn에서도 catch-up 기대
+
+    nv_ts = [s.t for s in _by_type(sigs, NonVerbalSignal)]
+    assert 1.5 in nv_ts, "poll catch-up: 마감 후 도착한 [0,3) 프레임으로 NV read"
+    assert 4.5 in nv_ts, "end_turn catch-up: [3,6) 회수"
+    # 전사는 마감 시점에 윈도우당 정확히 1회 — catch-up이 stt를 재제출하면 안 된다
+    tx_ts = sorted(s.t for s in _by_type(sigs, TranscriptSignal))
+    assert tx_ts == [1.5, 4.5, 7.5]

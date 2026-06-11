@@ -134,8 +134,11 @@
 2. **LLM 핸드오프 JSON 스키마**(수치 평균화·eval 프롬프트 간소화·분석 텍스트 포함) — 미착수.
    Gemini Live 결정에 따라 재평가.
 3. **테일 레이턴시 추적** — 미착수. 관측치: 윈도당 처리 꼬리 ~6-9s(유휴 GPU), stop→flush 0.03s.
-> ⚠ 미해결 버그(giljob-docker `qa/nv-lane-investigation.md`): 장수 서버 프로세스에서 3s NV 레인
-> 미발화(1fps 버퍼 빈 상태, 새 프로세스 재현 불가) — turn_end.eval null·window 레코드 stop-후-노출의 원인.
+> ✅ NV 레인 버그 해결(2026-06-11, giljob-docker `qa/nv-lane-investigation.md`): "장수 프로세스"는
+> 교란변수 — 진짜 원인은 poll 벽시계 vs 버스트 딜리버리 비디오의 경쟁(마감 때 프레임 미도착 →
+> `if frames:` 영구 스킵). 수정 = windowing.py **nv catch-up**(`_nv_starved` 기억 → 늦은 프레임
+> 도착 시 회수, 정시 경로 지연 0). 라이브 검증: 같은 조건에서 nonverbal 0/13→7/13(누락 6=프레임
+> 미딜리버 — lk 파일 퍼블리시 병리). ⚠ giljob-docker 컨테이너 핀 bump 필요(QA 컨테이너는 핫패치 상태).
 
 ## 다음 할 일 = Slice 14: **PR #8 머지 + 머지 후 정리**
 > 먼저 **`slice-13-container-pr.md`** 정독. MVP 구현·검증·PR까지 완료 — 남은 건 머지(사람 결정)와 후속.
