@@ -63,7 +63,7 @@ vocal 충돌 3/4건 — `.dev/vision/conflict-analysis.md`·`.dev/audio/conflict
 4. **aiortc 경로(consume_video) dense 미연결**: 통합 타깃은 LiveKit 경로라 거기만 배선.
 5. **컨테이너(giljob-docker) 미반영**: PR #8 머지 후 별도 작업 — extras 설치
    (`pip install .[vision,prosody]`) + 모델 .task 2개 다운로드 + env 3종. parselmouth GPL-3 검토.
-   → **(06-10 후속) 사전 작업 완료**: giljob-docker `feat/analysis-engine-grounding-lanes`(dd1a359, PR #8 스택).
+   → **(06-10 후속) 사전 작업 완료**: giljob-docker `feat/analysis-engine-grounding-lanes`(bbeb702, PR #8 스택).
    빌드+in-container 레인 활성+healthz 검증 PASS. ★slim엔 libegl1+libgles2 필수(GLES dlopen) — NEXT.md 참조.
 6. 스파이크 후 vLLM 컨테이너 stop·VRAM 해제 확인(GPU 위생). `tests/evidence/critic-live.raw.json`은
    라이브 게이트 테스트 재실행으로 재생성됨(무회귀 1 passed).

@@ -125,7 +125,7 @@
    재검증 결과 PR 코멘트 공유도 사용자 결정(세션 권한 정책상 자동 발신 차단됨 — 표는 slice-13 핸드오프 ②).
 2. **머지 후 스택 검증**: 그쪽이 compose up 시 analysis-engine이 PR 이미지로 뜨는지 + 프론트 종단(/analysis/signals) 확인.
 3. **그라운딩 레인 컨테이너 반영 = 사전 작업 완료(06-10)** — giljob-docker 브랜치
-   **`feat/analysis-engine-grounding-lanes`(dd1a359, PR #8 위 스택, 푸시됨)**: 핀 e0671f5 bump(5곳+테스트 상수) ·
+   **`feat/analysis-engine-grounding-lanes`(bbeb702, PR #8 위 스택, 푸시됨)**: 핀 e0671f5 bump(5곳+테스트 상수) ·
    `giljobe[vision,prosody]` extras · MediaPipe 모델 2개 베이크(/app/models) · `GILJOBE_VISION/PROSODY` 토글 ·
    계약 가드 신설. **검증: docker build + in-container 레인 활성(USER nobody, detect/extract 실측) + /healthz 200**.
    ★발견: slim엔 `libegl1+libgles2` 필수(MediaPipe C 바인딩이 CPU 추론에도 GLES dlopen — 없으면 비전 레인 silent 비활성,
