@@ -106,8 +106,9 @@ def _speech_row(s: dict, samples: np.ndarray, sr: int, ex: ProsodyExtractor,
     dur = t1 - t0
     syl = len(HANGUL.findall(s["text"]))
     out: dict = {
-        "pause_before_s": pause_before(t0, runs),                          # 망설임
-        "rate_syl_per_s": round(syl / dur, 1) if dur > 0.3 else None,      # 텍스트 기반(한글=음절)
+        "pause_before_s": pause_before(t0, runs),                            # 망설임
+        # 텍스트 기반 속도는 한글일 때만(한글 글자=음절). 영어 등은 아래 음향 음절핵이 커버.
+        "rate_text_syl_per_s": round(syl / dur, 1) if dur > 0.3 and syl else None,
     }
     pcm = samples[int(t0 * sr):int(t1 * sr)]
     m = ex.extract((pcm * 32768).astype(np.int16).tobytes(), sample_rate=sr) if dur >= 1.0 else None
@@ -115,6 +116,7 @@ def _speech_row(s: dict, samples: np.ndarray, sr: int, ex: ProsodyExtractor,
         out["note"] = "1초 미만/분석 불가 — 프로소디 생략"
         return out
     out.update({
+        "speech_rate_syl_per_s": m["rate"].get("speech_rate_syl_per_s"),   # 음향 음절핵 — 언어 무관
         "articulation_rate_syl_per_s": m["rate"].get("articulation_rate_syl_per_s"),
         "pitch_sd_semitone": m["pitch"].get("sd_semitone"),                # 억양(2 미만=단조)
         "pdq": m["pitch"].get("pdq"),
