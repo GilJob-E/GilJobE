@@ -118,6 +118,20 @@
     vocal 충돌 — 볼륨 역상관 2/2 해소 · 속도 자기모순 해소 · "단조" 상투구 3/3→**1/3 잔존**(수치 무시 — emit raw로 검출 가능).
     그라운딩됐던 "호흡 짧음"은 유지(올바름). 한계: nv note의 수치-번역 경향(비전 README 열린 질문 그대로) — 핸드오프 §발견.
 
+## ★★ 대개편 (사용자 명시 2026-06-11) — "전사만 LLM에 가면 의미 없음, 수치+분석 전달이 원설계"
+> PR #8 머지됨 · 그라운딩 레인 PR #11 오픈됨(giljob-docker). QA 실턴(kor.mp4)에서
+> next-question LLM에 `turn_end.transcript_full`(2,000자 절단)만 가는 것 확인 → 3개 워크스트림:
+1. **STT whisper 폴백 + 비교** — ✅ 완료(이 커밋): `FasterWhisperTranscriber`+`FallbackTranscriber`
+   (Slice 2가 예약한 seam) + `GILJOBE_STT=gemma|whisper|auto` 배선 + 오프라인 테스트 7.
+   실측(`qa/stt-comparison.json`, CPU int8): **large-v3-turbo full-clip이 사실상 완벽**(7.7s/38s),
+   3s-windowed는 small 0.76s/win(품질 gemma급) vs turbo 3.2s/win(품질 월등, 워커2로 실시간 유지 가능).
+   gemma 3s는 숫자 오인식("46%"→"6%") 포함 최다 오류. → **권고: turn_end에서 turbo full-clip 재전사**
+   (3s 라이브는 small/gemma 유지) — #2 스키마·#3 테일 레이턴시와 함께 결정.
+2. **LLM 핸드오프 JSON 스키마**(수치 평균화·eval 프롬프트 간소화·분석 텍스트 포함) — 미착수.
+3. **테일 레이턴시 추적** — 미착수. 관측치: 윈도당 처리 꼬리 ~6-9s(유휴 GPU), stop→flush 0.03s.
+> ⚠ 미해결 버그(giljob-docker `qa/nv-lane-investigation.md`): 장수 서버 프로세스에서 3s NV 레인
+> 미발화(1fps 버퍼 빈 상태, 새 프로세스 재현 불가) — turn_end.eval null·window 레코드 stop-후-노출의 원인.
+
 ## 다음 할 일 = Slice 14: **PR #8 머지 + 머지 후 정리**
 > 먼저 **`slice-13-container-pr.md`** 정독. MVP 구현·검증·PR까지 완료 — 남은 건 머지(사람 결정)와 후속.
 

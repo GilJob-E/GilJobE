@@ -29,7 +29,30 @@ def _build_critic():
     from giljobe.analysis.critic import WindowCritic
     from giljobe.llm.vllm_client import default_vllm_client
 
-    return WindowCritic(client=default_vllm_client())
+    client = default_vllm_client()
+    return WindowCritic(client=client, transcriber=_build_transcriber(client))
+
+
+def _build_transcriber(client):
+    """STT 선택(`GILJOBE_STT`): gemma(기본, 현행 무변경) | whisper(로컬 단독) |
+    auto(gemma primary → whisper 폴백 — vLLM 장애 시에도 전사 유지).
+    None 반환이면 critic이 기본 GemmaNative를 만든다. 미스컨피그는 기동 시점에 명시 실패
+    (침묵 강등 금지 — 잘못된 값으로 gemma가 조용히 선택되면 폴백 의도가 증발한다)."""
+    from giljobe.analysis.transcriber import (
+        FallbackTranscriber,
+        FasterWhisperTranscriber,
+        GemmaNativeTranscriber,
+    )
+
+    mode = (os.environ.get("GILJOBE_STT") or "gemma").strip().lower()
+    if mode == "gemma":
+        return None
+    whisper = FasterWhisperTranscriber(model_name=os.environ.get("GILJOBE_WHISPER_MODEL", "small"))
+    if mode == "whisper":
+        return whisper
+    if mode == "auto":
+        return FallbackTranscriber(GemmaNativeTranscriber(client=client), whisper)
+    raise ValueError(f"GILJOBE_STT 값이 잘못됨: {mode!r} (gemma|whisper|auto)")
 
 
 def _make_lanes():
