@@ -243,16 +243,20 @@ class WindowCritic:
         src_fps: float = 1.0,
         sample_rate: int = 16000,
         vision: dict | None = None,
+        prosody: dict | None = None,
     ) -> NonVerbalSignal:
         """채널 ① — 짧은 윈도우에서 지원자 비언어 상태 read.
 
         vision: 비전 dense 레인의 윈도우 집계(analysis/grounding.py). 있으면 프롬프트에 주입
         (inject) — 1fps 프레임 3장이 못 담는 시계열 정보(깜빡임 횟수·미소 지속%·움직임 분산)를
-        보강하고, 근거 없는 관찰/긴장 단정을 생성 시점에서 차단한다(GROUNDING_RULES)."""
+        보강하고, 근거 없는 관찰/긴장 단정을 생성 시점에서 차단한다(GROUNDING_RULES).
+        prosody: 프로소디 윈도우 측정치(analysis/prosody.py). 주입 비용은 입력 ~200토큰뿐이라
+        nv 지연에 사실상 영향 0 — "목소리 떨림" 류 음성 주장도 실측에 묶는다."""
         content = [_video_part(assemble_video_url(jpeg_frames, src_fps=src_fps))]
         if pcm:
             content.append(_audio_part(assemble_audio_url(pcm, sample_rate=sample_rate)))
-        prompt = "Read the candidate's non-verbal state now." + grounding_block(vision=vision)
+        prompt = "Read the candidate's non-verbal state now." + grounding_block(
+            vision=vision, prosody=prosody)
         content.append({"type": "text", "text": prompt})
         data = self._ask_json(system=NONVERBAL_SYSTEM, content=content, max_tokens=self.nonverbal_max_tokens)
         state = str(data.get("state", "neutral")).strip().lower()

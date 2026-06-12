@@ -62,7 +62,9 @@ class MockCritic:
         src_fps: float = 1.0,
         sample_rate: int = 16000,
         vision: dict | None = None,
+        prosody: dict | None = None,
     ) -> NonVerbalSignal:
+        self.last_nv_kwargs = {"vision": vision, "prosody": prosody}  # 주입 배선 테스트용 캡처
         return NonVerbalSignal(
             t=t, window_s=window_s, state=self.state, intensity=self.intensity, note=self.note,
         )

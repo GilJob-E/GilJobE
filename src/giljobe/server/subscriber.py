@@ -76,6 +76,7 @@ class LiveKitSubscriber:
         *,
         poll_interval: float = 0.5,
         video_format: int = VIDEO_RGB24,
+        video_fps: float | None = None,
         audio_sample_rate: int = SAMPLE_RATE,
         audio_channels: int = 1,
         video_stream_factory=_default_video_stream,
@@ -86,6 +87,7 @@ class LiveKitSubscriber:
         self.recorder = recorder
         self.poll_interval = poll_interval
         self.video_format = video_format
+        self.video_fps = video_fps  # JPEG 버퍼 샘플링 fps(None=ingest 기본 1fps) — nv 밀도 레버
         self.audio_sr = audio_sample_rate
         self.audio_ch = audio_channels
         self._vstream = video_stream_factory
@@ -209,7 +211,10 @@ class LiveKitSubscriber:
                 if getattr(self.windower, "grounder", None) is not None
                 else None
             )
-            coro = consume_video_lk(self._vstream(track, self.video_format), self.windower, dense=dense)
+            coro = consume_video_lk(
+                self._vstream(track, self.video_format), self.windower, dense=dense,
+                **({"target_fps": self.video_fps} if self.video_fps else {}),
+            )
         elif kind == KIND_AUDIO:
             stream = self._astream(track, self.audio_sr, self.audio_ch)
             coro = consume_audio_lk(stream, self.windower)

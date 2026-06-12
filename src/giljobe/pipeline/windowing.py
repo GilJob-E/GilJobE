@@ -34,6 +34,7 @@ compact tail이 재커버) — close() 후의 emit은 _closed 가드로 no-op이
 from __future__ import annotations
 
 import logging
+import os
 import threading
 from collections.abc import Callable
 from concurrent.futures import Future, ThreadPoolExecutor, wait
@@ -52,7 +53,9 @@ from .sentences import RealtimeTurnTracker, Sentence
 
 logger = logging.getLogger(__name__)
 
-NV_FRAME_CAP = 12  # 문장 nv 호출당 프레임 상한(긴 문장의 prefill 비용 캡 — 균등 샘플)
+# 문장 nv 호출당 프레임 상한(긴 문장의 prefill 비용 캡 — 균등 샘플). 버퍼 fps를 올릴 때
+# (GILJOBE_FRAME_FPS) 함께 올리지 않으면 캡이 fps 상향을 무효화한다(예: 3fps×7s=21장>12).
+NV_FRAME_CAP = int(os.environ.get("GILJOBE_NV_FRAME_CAP", "12"))
 
 # 문장 정렬 eval(외부 전사 모드 전용) 트리거 — 발화 중 분할상환(16s 그리드의 존재 이유)을
 # 유지하면서 윈도우를 문장 경계에 정렬한다(비평의 시간 참조가 문장 중간을 자르지 않게).
@@ -76,6 +79,7 @@ class _Critic(Protocol):
     def read_nonverbal(
         self, jpeg_frames: list[bytes], pcm: bytes, *, t: float, window_s: float,
         src_fps: float = ..., sample_rate: int = ..., vision: dict | None = ...,
+        prosody: dict | None = ...,
     ) -> NonVerbalSignal: ...
 
     def transcribe_window(
@@ -167,7 +171,10 @@ class TurnWindower:
         )
         # 문장 정렬 eval(eval_grid="sentence", 외부 전사 모드 전용): 16s 벽시계 그리드 대신
         # 문장 경계 누적 트리거(SENT_EVAL_*). internal 모드에선 무시(wall 그리드 유지).
+        # eval_grid="off": 발화중 풀 평가 + eot compact tail 모두 끔(모드 무관) — 내용 판단을
+        # 소비자 LLM에 위임하는 구성. turn_end.eval=None, tail 대기 0(turn 종료가 그만큼 빨라짐).
         self._sentence_eval = self.external_transcript and eval_grid == "sentence"
+        self._eval_off = eval_grid == "off"
         self._eval_anchor = 0.0       # 다음 문장 정렬 eval 윈도우 시작(직전 윈도우 끝)
         self._eval_pending_sents = 0  # 앵커 이후 누적 문장 수
         # 객관 그라운딩 레인(선택, inject AND emit). None이면 기존 동작 그대로(레인 비활성).
@@ -303,10 +310,12 @@ class TurnWindower:
     def _do_nv(self, start_s: float, dur_s: float, frames: list[bytes], pcm: bytes):
         # 수치를 critic 호출 *전에* 집계 — inject(프롬프트 주입) AND emit(signal에 raw 보존).
         vision = self._window_vision(start_s, start_s + dur_s)
+        prosody = self._window_prosody(pcm)
         try:
             sig = self.ev.read_nonverbal(
                 frames, pcm, t=start_s + dur_s / 2, window_s=dur_s,
                 src_fps=self.src_fps, sample_rate=self.sample_rate, vision=vision,
+                prosody=prosody,
             )
         except Exception:  # noqa: BLE001 - 워커 실패는 로깅하고 신호만 누락(다음 read가 커버)
             logger.exception("nonverbal read failed [%.1f, +%.1fs]", start_s, dur_s)
@@ -466,7 +475,7 @@ class TurnWindower:
                 nv = self.ev.read_nonverbal(
                     frames, pcm, t=(s.start_s + s.end_s) / 2, window_s=dur,
                     src_fps=max(0.5, len(frames) / dur), sample_rate=self.sample_rate,
-                    vision=vision,
+                    vision=vision, prosody=speech,
                 )
                 nonverbal = {"state": nv.state, "intensity": nv.intensity, "note": nv.note}
             except Exception:  # noqa: BLE001 - nv 실패는 문장 레코드에서 해당 채널만 누락
@@ -515,7 +524,7 @@ class TurnWindower:
                     self._nv_starved.append(start)
                 nv_jobs.append((start, self.nv_w, frames, pcm))
             # 문장 정렬 eval 모드: 벽시계 그리드 OFF — 트리거는 _submit_sentences가 담당.
-            while not self._sentence_eval and self._next_eval_end <= now_s:
+            while not (self._sentence_eval or self._eval_off) and self._next_eval_end <= now_s:
                 start = self._next_eval_end - self.eval_w
                 self._next_eval_end += self.eval_w
                 frames, pcm = self._slice(start, start + self.eval_w)
@@ -568,7 +577,7 @@ class TurnWindower:
             # 짧은 답변(풀 평가 0개)이면 전체가 tail이라 무조건 평가; 그 외엔 1s 미만 자투리만 무시
             # (직전 풀 윈도우가 이미 커버한 끝자락 sliver는 스킵).
             whole_answer = self._eval_covered_until == 0.0
-            if tail_dur > 0.0 and (whole_answer or tail_dur > 1.0):
+            if not self._eval_off and tail_dur > 0.0 and (whole_answer or tail_dur > 1.0):
                 frames, pcm = self._slice(tail_start, now_s)
                 tail_jobs.append((tail_start, tail_dur, frames, pcm))
             # 발화 중 프레임 늦도착으로 굶은 NV 윈도우 최종 회수 — track_nv라 아래 wait가 기다려

@@ -557,6 +557,47 @@ def test_sentence_eval_grid_count_then_span_trigger_and_tail_chain():
     assert len([s for s in _by_type(sigs, EvaluationSignal) if not s.compact]) == 2
 
 
+def test_sentence_nv_receives_prosody_injection():
+    """문장 nv read에 프로소디 측정치가 주입된다(vision과 동일하게 inject) — '목소리 떨림' 류
+    음성 주장을 실측에 묶는 배선. 주입은 입력 텍스트뿐이라 지연 영향 0."""
+    class _FakeProsody:
+        def extract(self, pcm, *, sample_rate=16000):
+            return {"duration_s": 1.0} if pcm else None
+
+    sigs = []
+    critic = MockCritic()
+    w = TurnWindower(
+        critic, on_signal=sigs.append, executor=InlineExecutor(),
+        transcript_source="external", prosody=_FakeProsody(),
+    )
+    pcm = b"\x00\x01" * 800
+    t = 0.0
+    while t < 8.0:
+        w.add_frame(t, b"jpeg")
+        w.add_audio(t, pcm)
+        t += 0.5
+    w.ingest_realtime_event(
+        {"eventKind": "transcript.completed", "detail": {"transcript": "문장입니다.", "itemId": "i1"}},
+        media_now=6.0,
+    )
+    assert _by_type(sigs, SentenceSignal)
+    assert critic.last_nv_kwargs["prosody"] == {"duration_s": 1.0}
+
+
+def test_eval_grid_off_disables_full_eval_and_tail():
+    """eval_grid="off": 발화중 풀 평가도 eot compact tail도 안 돈다(내용 판단 소비자 위임 구성).
+    nv·stt 그리드와 transcript_full 합본은 그대로 — turn_end.eval만 None."""
+    sigs = []
+    w = TurnWindower(MockCritic(), on_signal=sigs.append, executor=InlineExecutor(),
+                     eval_grid="off")
+    _fill(w, dur=18.0)
+    w.poll(18.0)  # wall 그리드였다면 [0,16) eval이 났을 시점
+    assert _by_type(sigs, EvaluationSignal) == []
+    assert _by_type(sigs, NonVerbalSignal) != []  # nv·stt 레인은 영향 없음
+    te = w.end_turn(20.0)
+    assert te.eval is None and te.transcript_full  # tail 미실행, 합본은 정상
+
+
 def test_internal_mode_rejects_realtime_events():
     """내부 전사 모드(기본)는 sideband 이벤트를 정중히 무시 — 기존 동작 무변경 가드."""
     w = TurnWindower(MockCritic(), executor=InlineExecutor())

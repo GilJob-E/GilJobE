@@ -42,17 +42,20 @@ def build_subscriber(
     만들어 넘길 것 — 윈도워가 수명(reset/close)을 소유한다(재사용 금지).
     transcript_source: internal(기본, gemma 3s 그리드) | external(PR #13 Realtime sideband —
     문장 레인이 nv·stt 그리드를 대체). None이면 env GILJOBE_TRANSCRIPT_SOURCE.
-    eval_grid: wall(기본, 16s 벽시계) | sentence(문장 경계 정렬 누적 트리거 — external 전용).
-    None이면 env GILJOBE_EVAL_GRID."""
+    eval_grid: wall(기본, 16s 벽시계) | sentence(문장 경계 정렬 누적 트리거 — external 전용) |
+    off(발화중·tail 평가 모두 끔 — 내용 판단은 소비자 LLM 위임). None이면 env GILJOBE_EVAL_GRID."""
     if transcript_source is None:
         transcript_source = os.environ.get("GILJOBE_TRANSCRIPT_SOURCE", "internal").strip().lower()
     if eval_grid is None:
         eval_grid = os.environ.get("GILJOBE_EVAL_GRID", "wall").strip().lower()
+    # JPEG 버퍼 fps(기본 1.0 — GilJob 규격). 올릴 땐 GILJOBE_NV_FRAME_CAP도 함께(캡이 무효화 방지).
+    video_fps = float(os.environ.get("GILJOBE_FRAME_FPS", "0") or 0) or None
     recorder = SignalRecorder(config.session_id, sinks)
     if executors is None:
         windower = TurnWindower(
             critic, eot_deadline_s=eot_deadline_s, grounder=grounder, prosody=prosody,
             transcript_source=transcript_source, eval_grid=eval_grid,
+            src_fps=video_fps or 1.0,
         )
     else:
         nv_x, stt_x, eval_x, tail_x = executors
@@ -61,10 +64,12 @@ def build_subscriber(
             nv_executor=nv_x, stt_executor=stt_x, eval_executor=eval_x, tail_executor=tail_x,
             eot_deadline_s=eot_deadline_s, grounder=grounder, prosody=prosody,
             transcript_source=transcript_source, eval_grid=eval_grid,
+            src_fps=video_fps or 1.0,
         )
     return LiveKitSubscriber(
         room if room is not None else _new_room(),
         windower,
         recorder,
         poll_interval=config.poll_interval,
+        video_fps=video_fps,
     )
