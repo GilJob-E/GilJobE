@@ -32,6 +32,7 @@ def build_subscriber(
     grounder=None,
     prosody=None,
     transcript_source: str | None = None,
+    eval_grid: str | None = None,
 ):
     """windower(critic 주입)+recorder(sinks fan-out)+subscriber를 조립해 반환.
 
@@ -40,14 +41,18 @@ def build_subscriber(
     grounder/prosody: 객관 그라운딩 레인(선택, inject AND emit). ★grounder는 세션마다 새로
     만들어 넘길 것 — 윈도워가 수명(reset/close)을 소유한다(재사용 금지).
     transcript_source: internal(기본, gemma 3s 그리드) | external(PR #13 Realtime sideband —
-    문장 레인이 nv·stt 그리드를 대체). None이면 env GILJOBE_TRANSCRIPT_SOURCE."""
+    문장 레인이 nv·stt 그리드를 대체). None이면 env GILJOBE_TRANSCRIPT_SOURCE.
+    eval_grid: wall(기본, 16s 벽시계) | sentence(문장 경계 정렬 누적 트리거 — external 전용).
+    None이면 env GILJOBE_EVAL_GRID."""
     if transcript_source is None:
         transcript_source = os.environ.get("GILJOBE_TRANSCRIPT_SOURCE", "internal").strip().lower()
+    if eval_grid is None:
+        eval_grid = os.environ.get("GILJOBE_EVAL_GRID", "wall").strip().lower()
     recorder = SignalRecorder(config.session_id, sinks)
     if executors is None:
         windower = TurnWindower(
             critic, eot_deadline_s=eot_deadline_s, grounder=grounder, prosody=prosody,
-            transcript_source=transcript_source,
+            transcript_source=transcript_source, eval_grid=eval_grid,
         )
     else:
         nv_x, stt_x, eval_x, tail_x = executors
@@ -55,7 +60,7 @@ def build_subscriber(
             critic,
             nv_executor=nv_x, stt_executor=stt_x, eval_executor=eval_x, tail_executor=tail_x,
             eot_deadline_s=eot_deadline_s, grounder=grounder, prosody=prosody,
-            transcript_source=transcript_source,
+            transcript_source=transcript_source, eval_grid=eval_grid,
         )
     return LiveKitSubscriber(
         room if room is not None else _new_room(),

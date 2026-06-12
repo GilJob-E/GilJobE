@@ -50,6 +50,21 @@ EVAL_SYSTEM = (
     '"key_observations": [str, ...]. 각 leaf는 한국어 짧은 비평.'
 )
 
+# 간소화 축(slim) — vocal/visual 텍스트 축 제거. 근거: 두 축은 객관 레인(프로소디·MediaPipe)이
+# 같은 내용을 더 정확히 측정하고, 그라운딩 주입에도 수치-모순 비평("단조" 상투구)을 5/6 윈도우에서
+# 냈다(giljob-docker qa/handoff-schema-notes.md). 출력 토큰 ~36%↓ → eval 꼬리 단축(A/B 검증 중).
+EVAL_SYSTEM_SLIM = (
+    "당신은 까다롭고 안목 높은 면접관입니다. 지원자 답변의 한 구간을 멀티모달(영상+음성)로 "
+    "**비평**하세요. 칭찬을 나열하는 평가자가 아니라 *비평가*로서, 잘한 점이 있으면 짚되 "
+    "**약점·어색함·우려·개선점을 반드시 구체적으로 지적**하세요. 무난하거나 부족하거나 "
+    "평범하면 솔직히 그렇게 쓰세요. 전달력(음량·속도·쉼·억양·시선·자세·표정)은 객관 장비가 "
+    "별도로 실측하므로 축으로 평가하지 말고, 측정치와 일치할 때만 critique에서 언급하세요. "
+    "오직 SINGLE JSON object로만 답하세요(키): "
+    '"verbal": {"logic": str, "structure": str, "specificity": str}, '
+    '"critique": [str, ...]  // 면접관으로서 이 구간에서 가장 걸리는 약점·우려 1~3개(필수, 비워두지 말 것), '
+    '"key_observations": [str, ...]. 각 leaf는 한국어 짧은 비평.'
+)
+
 # end-of-turn tail용 — 답변 *마지막 구간*만 아주 짧게. 출력 토큰이 지연의 지배 비용이라
 # (생성 ~90 tok/s), 다음질문 steering에 필요한 최소 2키만 내 turn 종료 지연을 묶는다.
 # (5키 중첩 스키마는 160토큰에서 잘려 JSON이 깨졌음 — 실측, 2026-05-30.)
@@ -179,11 +194,13 @@ class WindowCritic:
         eval_max_tokens: int = 640,
         tail_max_tokens: int = 160,
         nonverbal_max_tokens: int = 96,
+        eval_axes: str = "full",
     ) -> None:
         self.client = client or default_vllm_client()
         # 전사기는 critic과 같은 client를 공유 — 같은 vLLM E4B로 전사(VRAM 추가 0).
         self.transcriber = transcriber or GemmaNativeTranscriber(client=self.client)
         self.model = model
+        self.eval_axes = eval_axes                  # full | slim(vocal/visual 텍스트 축 제거)
         self.eval_max_tokens = eval_max_tokens      # 발화중 풀 비평(채널②)
         self.tail_max_tokens = tail_max_tokens      # end-of-turn compact tail (≤2.5s 목표 레버)
         self.nonverbal_max_tokens = nonverbal_max_tokens  # 채널① 비언어 read
@@ -267,6 +284,11 @@ class WindowCritic:
         """
         return self.transcriber.transcribe(pcm, sample_rate=sample_rate)
 
+    def _eval_system(self, compact: bool) -> str:
+        if compact:
+            return EVAL_TAIL_SYSTEM
+        return EVAL_SYSTEM_SLIM if self.eval_axes == "slim" else EVAL_SYSTEM
+
     def evaluate_window(
         self,
         jpeg_frames: list[bytes],
@@ -286,7 +308,7 @@ class WindowCritic:
         prosody/vision: 객관 레인의 윈도우 측정치(analysis/prosody.py·grounding.py). 있으면
         프롬프트에 주입 — vocal(단조로움·속도·볼륨·쉼)·visual(미소·자세·제스처) 비평을 수치에
         묶고, 근거 없는 상투구/자기모순/긴장 단정을 생성 시점에서 차단한다(GROUNDING_RULES)."""
-        system = EVAL_TAIL_SYSTEM if compact else EVAL_SYSTEM
+        system = self._eval_system(compact)
         max_tokens = self.tail_max_tokens if compact else self.eval_max_tokens
         prompt = "Critique the final part of this answer." if compact else "Evaluate this answer window."
         prompt += grounding_block(vision=vision, prosody=prosody)

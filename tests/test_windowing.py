@@ -510,6 +510,53 @@ def test_external_transcript_mode_sentence_lane_replaces_grids():
     assert te.transcript_full == "첫 문장입니다. 둘째 문장. 잔여 조각"
 
 
+def test_sentence_eval_grid_count_then_span_trigger_and_tail_chain():
+    """문장 정렬 eval(eval_grid="sentence"): 16s 벽시계 그리드 OFF — 앵커 이후 문장 4개(count)
+    또는 ~15s(span) 누적 시 [앵커, 마지막 문장 끝)을 풀 평가. 윈도우가 문장 경계에 정렬되고,
+    가변 폭 covered_until 연쇄로 end_turn tail은 마지막 평가 끝부터 시작한다."""
+    sigs = []
+    w = TurnWindower(
+        MockCritic(), on_signal=sigs.append, executor=InlineExecutor(),
+        transcript_source="external", eval_grid="sentence",
+    )
+    pcm = b"\x00\x01" * 800
+    t = 0.0
+    while t < 40.0:
+        w.add_frame(t, b"jpeg")
+        w.add_audio(t, pcm)
+        t += 0.5
+    w.poll(17.0)  # 벽시계 그리드였다면 [0,16) eval이 났을 시점
+    assert _by_type(sigs, EvaluationSignal) == []
+
+    # count 트리거: 문장 4개 → [0(초기 앵커), 마지막 문장 끝)
+    w.ingest_realtime_event(
+        {"eventKind": "transcript.completed",
+         "detail": {"transcript": "하나입니다. 둘입니다. 셋입니다. 넷입니다.", "itemId": "i1"}},
+        media_now=10.0,
+    )
+    evs = _by_type(sigs, EvaluationSignal)
+    assert len(evs) == 1 and evs[0].window_start_s == 0.0
+    first_end = evs[0].window_start_s + evs[0].window_dur_s
+
+    # span 트리거: 문장 1개라도 앵커에서 15s 이상 경과 → [직전 윈도우 끝, 이 문장 끝) — 앵커 연쇄
+    w.ingest_realtime_event(
+        {"eventKind": "transcript.completed",
+         "detail": {"transcript": "한참 뒤의 다섯째 문장입니다.", "itemId": "i2"}},
+        media_now=30.0,
+    )
+    evs = _by_type(sigs, EvaluationSignal)
+    assert len(evs) == 2
+    assert evs[1].window_start_s == pytest.approx(first_end)
+
+    # 가변 폭 윈도우에서도 covered_until이 연쇄 → tail은 둘째 윈도우 끝부터(이중 평가 없음)
+    te = w.end_turn(40.0)
+    assert te.eval is not None and te.eval.compact is True
+    assert te.eval.window_start_s == pytest.approx(
+        evs[1].window_start_s + evs[1].window_dur_s)
+    # end_turn flush 문장은 풀 평가를 추가로 내지 않는다(allow_eval=False)
+    assert len([s for s in _by_type(sigs, EvaluationSignal) if not s.compact]) == 2
+
+
 def test_internal_mode_rejects_realtime_events():
     """내부 전사 모드(기본)는 sideband 이벤트를 정중히 무시 — 기존 동작 무변경 가드."""
     w = TurnWindower(MockCritic(), executor=InlineExecutor())

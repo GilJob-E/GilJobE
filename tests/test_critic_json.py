@@ -62,3 +62,26 @@ def test_extract_raises_on_no_json():
 
 def test_repair_returns_none_on_no_brace():
     assert _repair_truncated_json("브레이스 없음") is None
+
+
+# ── eval 축 토글(slim) — 프롬프트 선택 가드 (GPU/vLLM 불요) ──
+
+def test_eval_axes_selects_system_prompt():
+    """eval_axes="slim"이면 발화중 풀 평가가 EVAL_SYSTEM_SLIM(vocal/visual 축 없음)을 쓴다.
+    compact tail은 축 토글과 무관하게 항상 EVAL_TAIL_SYSTEM(이미 최소 스키마)."""
+    from giljobe.analysis.critic import (
+        EVAL_SYSTEM,
+        EVAL_SYSTEM_SLIM,
+        EVAL_TAIL_SYSTEM,
+        WindowCritic,
+    )
+
+    full = WindowCritic(client=object(), transcriber=object())
+    slim = WindowCritic(client=object(), transcriber=object(), eval_axes="slim")
+    assert full._eval_system(compact=False) == EVAL_SYSTEM
+    assert slim._eval_system(compact=False) == EVAL_SYSTEM_SLIM
+    assert slim._eval_system(compact=True) == EVAL_TAIL_SYSTEM
+    # slim 스키마에서 전달력 축이 실제로 빠져 있는지(출력 토큰 절감의 실체)
+    assert '"vocal"' in EVAL_SYSTEM and '"visual"' in EVAL_SYSTEM
+    assert '"vocal"' not in EVAL_SYSTEM_SLIM and '"visual"' not in EVAL_SYSTEM_SLIM
+    assert '"verbal"' in EVAL_SYSTEM_SLIM and '"critique"' in EVAL_SYSTEM_SLIM

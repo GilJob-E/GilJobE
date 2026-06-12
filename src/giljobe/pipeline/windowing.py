@@ -54,6 +54,11 @@ logger = logging.getLogger(__name__)
 
 NV_FRAME_CAP = 12  # 문장 nv 호출당 프레임 상한(긴 문장의 prefill 비용 캡 — 균등 샘플)
 
+# 문장 정렬 eval(외부 전사 모드 전용) 트리거 — 발화 중 분할상환(16s 그리드의 존재 이유)을
+# 유지하면서 윈도우를 문장 경계에 정렬한다(비평의 시간 참조가 문장 중간을 자르지 않게).
+SENT_EVAL_MAX_SENTS = 4  # 앵커 이후 누적 문장 수 상한
+SENT_EVAL_SPAN_S = 15.0  # 또는 누적 구간 길이 — 16s 벽시계 그리드와 등가 수준
+
 
 def _cap_frames(frames: list[bytes], cap: int = NV_FRAME_CAP) -> list[bytes]:
     if len(frames) <= cap:
@@ -142,6 +147,7 @@ class TurnWindower:
         prosody: _Prosody | None = None,
         transcript_source: str = "internal",
         sentence_timeout_s: float = 10.0,
+        eval_grid: str = "wall",
     ) -> None:
         self.ev = critic
         self.on_signal = on_signal
@@ -159,6 +165,11 @@ class TurnWindower:
             if self.external_transcript
             else None
         )
+        # 문장 정렬 eval(eval_grid="sentence", 외부 전사 모드 전용): 16s 벽시계 그리드 대신
+        # 문장 경계 누적 트리거(SENT_EVAL_*). internal 모드에선 무시(wall 그리드 유지).
+        self._sentence_eval = self.external_transcript and eval_grid == "sentence"
+        self._eval_anchor = 0.0       # 다음 문장 정렬 eval 윈도우 시작(직전 윈도우 끝)
+        self._eval_pending_sents = 0  # 앵커 이후 누적 문장 수
         # 객관 그라운딩 레인(선택, inject AND emit). None이면 기존 동작 그대로(레인 비활성).
         # grounder 수명은 윈도워가 함께 구동한다(reset/close) — 세션마다 새로 만들어 주입.
         self.grounder = grounder
@@ -197,7 +208,9 @@ class TurnWindower:
         # (GOP 버스트/지터로 비디오가 오디오·poll시계보다 늦는 실측 사례: qa/nv-lane-investigation.md)
         self._nv_starved: list[float] = []
         self._eval_covered_until = 0.0      # 풀 평가가 *연속 성공* 완료된 끝 시각 → eot compact tail 시작점
-        self._eval_done_ends: set[float] = set()  # 성공한 풀 윈도우 end(그리드) — 연속 prefix 계산용
+        # 성공한 풀 윈도우 start→end — 연속 prefix 계산용. dict라야 문장 정렬 모드의 가변 폭
+        # 윈도우에서도 같은 메커니즘이 동작한다(wall 모드는 start가 eval_w 배수일 뿐).
+        self._eval_done_spans: dict[float, float] = {}
         self._transcripts: dict[float, str] = {}  # window_start → 전사 텍스트(turn_end 합본 재료)
         self._out: list[Signal] = []
         self._futures: list[Future] = []
@@ -337,12 +350,13 @@ class TurnWindower:
         sig.objective_visual = vision
         # max()가 아니라 연속 prefix라야: 앞 윈도우가 실패/지연되면 covered_until이 그 구멍을
         # 건너뛰지 않고 멈춘다 → 그 미평가 구간을 end_turn compact tail이 다시 커버(누락 방지).
+        # start 키 조회 연쇄라 wall(고정 16s)·sentence(가변 폭) 윈도우 모두에서 동작.
         with self._lock:
-            self._eval_done_ends.add(start_s + dur_s)
-            nxt = self._eval_covered_until + self.eval_w
-            while nxt in self._eval_done_ends:
+            self._eval_done_spans[round(start_s, 3)] = start_s + dur_s
+            nxt = self._eval_done_spans.get(round(self._eval_covered_until, 3))
+            while nxt is not None:
                 self._eval_covered_until = nxt
-                nxt += self.eval_w
+                nxt = self._eval_done_spans.get(round(self._eval_covered_until, 3))
         self._emit(sig)
         return sig
 
@@ -403,7 +417,7 @@ class TurnWindower:
         self._submit_sentences(sentences)
         return {"accepted": True, "eventKind": kind[:60], "sentences": len(sentences)}
 
-    def _submit_sentences(self, sentences: list[Sentence]) -> None:
+    def _submit_sentences(self, sentences: list[Sentence], *, allow_eval: bool = True) -> None:
         for s in sentences:
             with self._tx_lock:  # turn_end transcript_full 합본 재료(문장 start로 t-정렬)
                 if s.text:
@@ -411,6 +425,31 @@ class TurnWindower:
             # nv 레인 재사용(그리드 nv가 꺼져 있어 비어 있음) + track_nv → end_turn이 기다려
             # 마지막 문장이 TurnEnd 전에 도착한다(레코드 순서 보장).
             self._submit(self._nv_exec, self._do_sentence, s, track_nv=True)
+        # allow_eval=False는 end_turn flush 경로 — 잔여 구간은 compact tail이 커버하므로
+        # 여기서 풀 평가를 또 내면 같은 구간을 두 번 평가하게 된다.
+        if self._sentence_eval and allow_eval and sentences:
+            self._maybe_submit_sentence_eval(sentences)
+
+    def _maybe_submit_sentence_eval(self, sentences: list[Sentence]) -> None:
+        """문장 정렬 eval 트리거 — 앵커 이후 문장 SENT_EVAL_MAX_SENTS개 또는 SENT_EVAL_SPAN_S초
+        누적 시 [앵커, 마지막 문장 끝)을 풀 평가로 제출. 앵커는 제출 *전에* 전진(그리드와 같은
+        중복 방지 관용). frames/pcm 게이트 탈락 시 covered_until이 멈춰 compact tail이 재커버."""
+        job: tuple[float, float, list[bytes], bytes] | None = None
+        with self._lock:
+            self._eval_pending_sents += len(sentences)
+            last_end = max(s.end_s for s in sentences)
+            span = last_end - self._eval_anchor
+            if span > 0 and (
+                self._eval_pending_sents >= SENT_EVAL_MAX_SENTS or span >= SENT_EVAL_SPAN_S
+            ):
+                frames, pcm = self._slice(self._eval_anchor, last_end)
+                job = (self._eval_anchor, span, frames, pcm)
+                self._eval_anchor = last_end
+                self._eval_pending_sents = 0
+        if job is not None:
+            start, dur, frames, pcm = job
+            if frames and pcm:  # 평가는 영상+오디오 둘 다 필요(벽시계 그리드와 동일 게이트)
+                self._submit(self._eval_exec, self._do_eval, start, dur, frames, pcm)
 
     def _do_sentence(self, s: Sentence):
         """문장 워커 — 한 문장 구간으로 4채널을 자른다: 비전 집계(grounder는 임의 구간 지원),
@@ -475,7 +514,8 @@ class TurnWindower:
                 if not frames:  # 마감인데 프레임 미도착 — 늦게 오면 catch-up으로 회수
                     self._nv_starved.append(start)
                 nv_jobs.append((start, self.nv_w, frames, pcm))
-            while self._next_eval_end <= now_s:
+            # 문장 정렬 eval 모드: 벽시계 그리드 OFF — 트리거는 _submit_sentences가 담당.
+            while not self._sentence_eval and self._next_eval_end <= now_s:
                 start = self._next_eval_end - self.eval_w
                 self._next_eval_end += self.eval_w
                 frames, pcm = self._slice(start, start + self.eval_w)
@@ -547,8 +587,9 @@ class TurnWindower:
         for (start, dur, frames, pcm) in nv_catch_up:  # nv만 — stt는 마감 때 이미 제출됨
             self._submit(self._nv_exec, self._do_nv, start, dur, frames, pcm, track_nv=True)
         # 외부 전사 모드: 미완 델타 잔여를 마지막 문장으로 flush(track_nv → 아래 wait가 기다림).
+        # allow_eval=False — 잔여 구간은 위의 compact tail이 커버한다(이중 평가 방지).
         if self._sent_tracker is not None:
-            self._submit_sentences(self._sent_tracker.flush(now_s))
+            self._submit_sentences(self._sent_tracker.flush(now_s), allow_eval=False)
         # transcript_full은 stt를, recorder의 nv·전사 페어링은 nv를, compact eval은 tail을 기다린다.
         # nv를 기다려야 트레일링 윈도우의 NonVerbalSignal이 TurnEnd emit *전에* 도착해 소비자(Sink)가
         # nv·전사를 한 레코드로 병합한다(안 기다리면 nv가 늦게 와 nonverbal=None 부분 레코드로 새고 nv 유실).
@@ -603,7 +644,9 @@ class TurnWindower:
             self._next_eval_end = self.eval_w
             self._nv_starved = []
             self._eval_covered_until = 0.0
-            self._eval_done_ends = set()
+            self._eval_done_spans = {}
+            self._eval_anchor = 0.0
+            self._eval_pending_sents = 0
         if self.grounder is not None:  # dense 행/epoch 초기화(이전 턴 in-flight 결과 차단)
             self.grounder.reset()
         if self._sent_tracker is not None:  # 이전 턴 델타 누적/경계 상태 초기화

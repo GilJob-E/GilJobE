@@ -30,7 +30,9 @@ def _build_critic():
     from giljobe.llm.vllm_client import default_vllm_client
 
     client = default_vllm_client()
-    return WindowCritic(client=client, transcriber=_build_transcriber(client))
+    # eval_axes: full(기본) | slim — vocal/visual 텍스트 축 제거(객관 레인이 대체, A/B 토글)
+    eval_axes = os.environ.get("GILJOBE_EVAL_AXES", "full").strip().lower()
+    return WindowCritic(client=client, transcriber=_build_transcriber(client), eval_axes=eval_axes)
 
 
 def _build_transcriber(client):
