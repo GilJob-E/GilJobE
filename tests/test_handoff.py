@@ -103,3 +103,16 @@ def test_signals_payload_carries_turn_handoff():
     assert before["turnHandoff"] is None
     assert after["turnHandoff"]["type"] == "turn_handoff"
     assert after["rawMediaExposed"] is False and after["rawSecretsExposed"] is False
+
+
+def test_render_prompt_fragment_single_line_budget_no_quotes():
+    """Realtime fragment — 900자 예산 내 단일라인, 전사 인용 없음(시간 참조+수치만)."""
+    from giljobe.emit.handoff import render_prompt_fragment
+
+    h = build_turn_handoff("s", [*SENTS, TURN_END])
+    frag = render_prompt_fragment(h)
+    assert len(frag) <= 880 and "\n" not in frag
+    assert "음성 실측" in frag and "조음" in frag
+    assert "라마바" not in frag  # 전사 인용 금지 — 시간 참조만
+    assert "(4~12초)" in frag and "에너지 -2.5dB" in frag
+    assert "실측치만 정본" in frag

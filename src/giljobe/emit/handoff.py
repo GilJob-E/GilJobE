@@ -263,6 +263,49 @@ def render_prompt_block(handoff: dict) -> list[str]:
     return lines
 
 
+def render_prompt_fragment(handoff: dict, max_chars: int = 880) -> str:
+    """Realtime 경로용 단일라인 압축 fragment — giljob-docker API의 candidatePromptFragment
+    예산(900자, 공백 정규화로 개행 불가) 안에서 핵심만 운반한다. 전사 인용은 싣지 않는다
+    (candidate-safe 보수 설계 — 시간 참조+수치+nv 상태만). prompt_block의 축약본."""
+    parts: list[str] = []
+    sp = handoff.get("speech") or {}
+    if sp:
+        pitch, rate, pauses, energy = (sp.get(k, {}) for k in ("pitch", "rate", "pauses", "energy"))
+        bits = []
+        if rate.get("articulation_rate_syl_per_s") is not None:
+            bits.append(f"조음 {rate['articulation_rate_syl_per_s']}음절/s(보통 5.8~6.9)")
+        if pitch.get("sd_semitone") is not None:
+            bits.append(f"F0 변동 {pitch['sd_semitone']}st(2 미만이면 단조)")
+        if pauses.get("pause_count_ge_0p25") is not None:
+            bits.append(f"쉼(0.25s 이상) {pauses['pause_count_ge_0p25']}회")
+        if energy.get("half_to_half_delta_db") is not None:
+            bits.append(f"음량 전반 대비 후반 {energy['half_to_half_delta_db']:+.1f}dB")
+        if bits:
+            parts.append("음성 실측: " + " · ".join(bits) + ".")
+    vis = handoff.get("visual") or {}
+    if vis.get("face_frames"):
+        bits = [f"미소 평균 {vis.get('smile_mean')}", f"시선 이탈 {vis.get('gaze_off_mean')}"]
+        if (vis.get("wrist_visible") or 0) < 0.2:
+            bits.append("손동작 관측 불가(평가 금지)")
+        parts.append("시각 실측: " + " · ".join(str(b) for b in bits) + ".")
+    nv = handoff.get("nonverbal") or {}
+    if nv.get("windows"):
+        states = ", ".join(f"{s} {int(r * 100)}%" for s, r in nv["states"].items())
+        parts.append(f"비언어 상태: {states}.")
+    hi_bits = []
+    for line in _render_highlights(handoff.get("sentences", [])):
+        # "- (30~37초) \"...\" — 에너지 -2.0dB" → 인용 제거, 시간+수치만
+        time_ref, _, metrics = line.partition(" — ")
+        time_ref = time_ref.split('"')[0].lstrip("- ").strip()
+        if metrics:
+            hi_bits.append(f"{time_ref} {metrics}")
+    if hi_bits:
+        parts.append("주목 구간: " + " / ".join(hi_bits) + ".")
+    parts.append("내용 판단은 들은 답변 기준으로 직접 하고, 전달력은 위 실측치만 정본으로 삼아라.")
+    text = " ".join(parts)
+    return text[:max_chars]
+
+
 def build_turn_handoff(session_id: str, records: list[dict]) -> dict | None:
     """turn_end가 있어야 빌드(턴 완결 전 None). external 모드는 sentence 레코드가 정본 입력,
     (구)internal·wall 구성에서는 eval objective_*/window nv로 폴백 — additive 호환."""
