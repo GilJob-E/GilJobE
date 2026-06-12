@@ -3,7 +3,8 @@
 `.dev/vision/` 탐색 세션의 확정 결정 포팅(vision_grounding_poc.py·pose_grounding_poc.py →
 프로덕션): **MediaPipe Face Landmarker(52 블렌드셰이프+head-pose) + Pose Landmarker(33 키포인트
 +visibility), face·pose 각자 단일 스레드**(순차 1스레드는 p95 43.9ms로 33ms 예산 초과, 병렬
-2스레드는 57.6fps — `.dev/vision/combined_latency.json`). Hand Landmarker는 옵션(이번 범위 밖).
+2스레드는 57.6fps — `.dev/vision/combined_latency.json`). Hand Landmarker는 옵션 모델 —
+모델 파일이 있으면 셋째 레인으로 가동해 손가락 셈(펼친 손가락 수 안정 구간)을 그라운딩한다.
 
 ★ 협력 ≠ 벤치마크(메모 `collaboration-not-benchmark-input-policy`): 이 레인은 젬마 cadence(3s,
 1fps)로 굶기지 않고 **네이티브 fps로 풀가동**해, 젬마가 구조적으로 못 내는 시계열 신호(깜빡임
@@ -37,13 +38,20 @@ logger = logging.getLogger(__name__)
 
 FACE_MODEL = "face_landmarker.task"
 POSE_MODEL = "pose_landmarker.task"
+HAND_MODEL = "hand_landmarker.task"
 BLINK_TH = 0.5      # avg(eyeBlinkL,R) 상향 교차 = 깜빡임 1회(PoC와 동일)
 SMILE_TH = 0.2      # smile_pct 기준(PoC와 동일)
 VIS_TH = 0.5        # pose visibility 임계(프레임 안/밖)
 GESTURE_VEL = 0.15  # 어깨폭 15%/frame 이상 손목 변위 = 뚜렷한 손동작(PoC와 동일)
 WRIST_OBSERVABLE = 0.2  # 이 미만이면 손이 화면 밖 — 제스처 평가 차단 신호
+FINGER_RADIAL = 1.25    # 손목→끝/손목→PIP 반경비 — 펴짐 1.4대·접힘 0.6~0.7·가림 환각 1.1(벤치 실측)
+THUMB_AWAY = 0.75       # 엄지끝→중지MCP/손바닥길이 — 접힘(손바닥 가로지름) 0.55~0.67·폄 0.83+(벤치 실측)
+FINGER_SEG_MIN_S = 0.4  # 동일 카운트 안정 구간 하한 — 미만은 셈 전이 노이즈로 버린다
 # Pose 33 랜드마크 인덱스
 _NOSE, _LSH, _RSH, _LWR, _RWR = 0, 11, 12, 15, 16
+# Hand 21 랜드마크 인덱스: 네 손가락 (PIP, TIP) + 엄지 끝·중지 MCP(손바닥 스케일 기준점)
+_FINGERS = ((6, 8), (10, 12), (14, 16), (18, 20))
+_THUMB_TIP, _MIDDLE_MCP = 4, 9
 
 
 def maybe_vision_grounder(models_dir: str | Path | None = None) -> "VisionGrounder | None":
@@ -56,12 +64,14 @@ def maybe_vision_grounder(models_dir: str | Path | None = None) -> "VisionGround
     if not models_dir and not os.environ.get("GILJOBE_VISION_MODELS_DIR"):
         logger.info("비전 레인 비활성(GILJOBE_VISION_MODELS_DIR 미설정)")
         return None
-    face, pose = d / FACE_MODEL, d / POSE_MODEL
+    face, pose, hand = d / FACE_MODEL, d / POSE_MODEL, d / HAND_MODEL
     if not (face.is_file() and pose.is_file()):
         logger.warning("비전 레인 비활성(모델 없음: %s, %s)", face, pose)
         return None
+    if not hand.is_file():
+        logger.info("손 레인 없이 가동(모델 없음: %s) — face/pose만", hand)
     try:
-        return VisionGrounder(face, pose)
+        return VisionGrounder(face, pose, hand_model=hand if hand.is_file() else None)
     except Exception:  # noqa: BLE001 - 레인 기동 실패가 서비스를 죽이면 안 됨(비활성으로 강등)
         logger.exception("비전 레인 비활성(VisionGrounder 생성 실패)")
         return None
@@ -73,7 +83,8 @@ class VisionGrounder:
     수명은 한 구독자 세션과 같다(윈도워가 reset/close를 함께 구동). MediaPipe VIDEO 모드의
     timestamp 단조 요구 때문에 reset은 검출기를 재생성하지 않고 ts 베이스를 전진시킨다."""
 
-    def __init__(self, face_model: str | Path, pose_model: str | Path, *, max_backlog: int = 30) -> None:
+    def __init__(self, face_model: str | Path, pose_model: str | Path, *,
+                 hand_model: str | Path | None = None, max_backlog: int = 30) -> None:
         from mediapipe.tasks import python
         from mediapipe.tasks.python import vision
 
@@ -86,21 +97,32 @@ class VisionGrounder:
             base_options=python.BaseOptions(model_asset_path=str(pose_model)),
             running_mode=vision.RunningMode.VIDEO, num_poses=1,
         ))
+        self._hand = None                    # 옵션 셋째 레인 — 모델 없으면 face/pose만(기존 동작)
+        if hand_model is not None:
+            self._hand = vision.HandLandmarker.create_from_options(vision.HandLandmarkerOptions(
+                base_options=python.BaseOptions(model_asset_path=str(hand_model)),
+                running_mode=vision.RunningMode.VIDEO, num_hands=2,
+            ))
         self.max_backlog = max_backlog
         # 레인당 워커 1 고정 — VIDEO 모드 검출기는 단조 timestamp를 요구해 동시 호출 불가.
         self._face_exec = ThreadPoolExecutor(max_workers=1, thread_name_prefix="gje-face")
         self._pose_exec = ThreadPoolExecutor(max_workers=1, thread_name_prefix="gje-pose")
+        self._hand_exec = (ThreadPoolExecutor(max_workers=1, thread_name_prefix="gje-hand")
+                           if self._hand else None)
         self._rows_lock = threading.Lock()   # 결과 행 + epoch 보호
         self._sub_lock = threading.Lock()    # pending 카운터(load-shedding) 보호
         self._face_rows: list[dict] = []
         self._pose_rows: list[dict] = []
+        self._hand_rows: list[dict] = []
         self._epoch = 0
         self._pending_face = 0
         self._pending_pose = 0
+        self._pending_hand = 0
         self._shed = 0                       # 백로그로 버린 프레임 수(집계에 노출 — silent cap 방지)
         self._ts_base_ms = 0                 # reset 시 전진 — MediaPipe ts 단조 유지
         self._face_last_ms = 0               # face 워커 전용(단일 스레드)
         self._pose_last_ms = 0               # pose 워커 전용(단일 스레드)
+        self._hand_last_ms = 0               # hand 워커 전용(단일 스레드)
         self._closed = False
 
     # ── 입력 (이벤트루프에서 호출 — submit만, 비차단) ──
@@ -110,14 +132,19 @@ class VisionGrounder:
         if self._closed:
             return
         with self._sub_lock:
-            if self._pending_face >= self.max_backlog or self._pending_pose >= self.max_backlog:
+            if (self._pending_face >= self.max_backlog or self._pending_pose >= self.max_backlog
+                    or self._pending_hand >= self.max_backlog):
                 self._shed += 1
                 return
             self._pending_face += 1
             self._pending_pose += 1
+            if self._hand_exec:
+                self._pending_hand += 1
             epoch = self._epoch
         self._face_exec.submit(self._detect_face, epoch, t_s, frame)
         self._pose_exec.submit(self._detect_pose, epoch, t_s, frame)
+        if self._hand_exec:
+            self._hand_exec.submit(self._detect_hand, epoch, t_s, frame)
 
     # ── 워커 (레인당 단일 스레드 — 예외는 로깅하고 삼킨다: 한 프레임 실패가 레인을 죽이지 않게) ──
     def _detect_face(self, epoch: int, t_s: float, frame) -> None:
@@ -145,6 +172,19 @@ class VisionGrounder:
             with self._sub_lock:
                 self._pending_pose -= 1
         self._append(self._pose_rows, epoch, row)
+
+    def _detect_hand(self, epoch: int, t_s: float, frame) -> None:
+        try:
+            ms = self._next_ms("_hand_last_ms", t_s)
+            res = self._hand.detect_for_video(self._mp_image(frame), ms)
+            row = _hand_row(t_s, res)
+        except Exception:  # noqa: BLE001
+            logger.exception("hand detect 실패 t=%.2f(이 프레임만 누락)", t_s)
+            return
+        finally:
+            with self._sub_lock:
+                self._pending_hand -= 1
+        self._append(self._hand_rows, epoch, row)
 
     def _next_ms(self, attr: str, t_s: float) -> int:
         """검출기별 단조 증가 ms timestamp(VIDEO 모드 요구). 워커 전용 상태라 lock 불요."""
@@ -175,10 +215,13 @@ class VisionGrounder:
         with self._rows_lock:
             face = [r for r in self._face_rows if start_s <= r["t"] < end_s]
             pose = [r for r in self._pose_rows if start_s <= r["t"] < end_s]
+            hand = [r for r in self._hand_rows if start_s <= r["t"] < end_s]
             shed = self._shed
-        if not face and not pose:
+        if not face and not pose and not hand:
             return None
         out = {**aggregate_face(face), **aggregate_pose(pose)}
+        if self._hand_exec:  # 손 레인 비활성이면 키 자체를 내지 않는다(기존 shape 보존)
+            out.update(aggregate_hands(hand))
         if shed:
             out["shed_frames_total"] = shed
         return out
@@ -187,8 +230,10 @@ class VisionGrounder:
         """제출된 검출이 모두 끝날 때까지 대기(테스트/측정용 배리어 — 레인당 단일 스레드 FIFO)."""
         if self._closed:
             return
-        wait([self._face_exec.submit(lambda: None), self._pose_exec.submit(lambda: None)],
-             timeout=timeout)
+        barriers = [self._face_exec.submit(lambda: None), self._pose_exec.submit(lambda: None)]
+        if self._hand_exec:
+            barriers.append(self._hand_exec.submit(lambda: None))
+        wait(barriers, timeout=timeout)
 
     # ── 수명 ──
     def reset(self) -> None:
@@ -197,10 +242,11 @@ class VisionGrounder:
         with self._rows_lock:
             self._face_rows = []
             self._pose_rows = []
+            self._hand_rows = []
             self._epoch += 1
         with self._sub_lock:
             self._shed = 0
-        self._ts_base_ms = max(self._face_last_ms, self._pose_last_ms) + 1000
+        self._ts_base_ms = max(self._face_last_ms, self._pose_last_ms, self._hand_last_ms) + 1000
 
     def close(self) -> None:
         """새 입력 차단 후 레인 종료. 검출기 close는 각 레인 큐의 마지막 잡으로 제출해(단일 스레드
@@ -210,6 +256,9 @@ class VisionGrounder:
         self._pose_exec.submit(self._pose.close)
         self._face_exec.shutdown(wait=False)
         self._pose_exec.shutdown(wait=False)
+        if self._hand_exec:
+            self._hand_exec.submit(self._hand.close)
+            self._hand_exec.shutdown(wait=False)
 
 
 # ── per-frame 행 추출 (워커에서 호출 — 집계에 필요한 필드만 남겨 행을 작게) ──
@@ -255,6 +304,42 @@ def _pose_row(t_s: float, res) -> dict:
             "r": (lm[_RWR].x, lm[_RWR].y, lm[_RWR].visibility),
         },
     }
+
+
+def _hand_row(t_s: float, res) -> dict:
+    if not res.hand_world_landmarks:
+        return {"t": t_s, "hands": 0}
+    # world 좌표(m) 필수 — 정규화 2D는 카메라 쪽 접힘이 단축돼 일직선으로 보인다(프로브 증거)
+    fingers = sum(count_extended_fingers([(p.x, p.y, p.z) for p in lm])
+                  for lm in res.hand_world_landmarks)
+    return {"t": t_s, "hands": len(res.hand_world_landmarks), "fingers": fingers}
+
+
+def count_extended_fingers(pts: list[tuple[float, ...]]) -> int:
+    """Hand 21 랜드마크(3D world 권장) → 펴진 손가락 수.
+
+    관절각 기준은 기각 — 가려진 손가락은 MediaPipe가 '펴짐' 기하로 환각해 각도가 통과한다
+    (기준 영상 '3'의 접힌 검지: 체인 길이는 뭉개졌는데 관절각 160~180도 — hands_probe.py).
+    네 손가락은 손목 반경비(접히면 끝이 PIP 안쪽으로 들어온다), 엄지는 손바닥을 가로지르는
+    접힘 특성상 끝→중지MCP 거리로 판정. 임계는 기준 영상 3-2-5 실측 분리값(상수 주석)."""
+    wrist = pts[0]
+    n = sum(1 for pip, tip in _FINGERS
+            if math.dist(wrist, pts[tip]) > math.dist(wrist, pts[pip]) * FINGER_RADIAL)
+    palm = math.dist(wrist, pts[_MIDDLE_MCP])
+    if palm > 1e-9 and math.dist(pts[_THUMB_TIP], pts[_MIDDLE_MCP]) > palm * THUMB_AWAY:
+        n += 1
+    return n
+
+
+def _angle_deg(v: tuple[float, ...], a: tuple[float, ...], b: tuple[float, ...]) -> float:
+    """꼭짓점 v에서 a·b로 향하는 두 벡터의 사잇각(도) — 2D/3D 무관."""
+    av = [ai - vi for ai, vi in zip(a, v)]
+    bv = [bi - vi for bi, vi in zip(b, v)]
+    den = math.sqrt(sum(x * x for x in av)) * math.sqrt(sum(x * x for x in bv))
+    if den < 1e-9:
+        return 0.0
+    dot = sum(x * y for x, y in zip(av, bv))
+    return math.degrees(math.acos(max(-1.0, min(1.0, dot / den))))
 
 
 def _euler_deg(mat: np.ndarray) -> tuple[float, float, float]:
@@ -314,6 +399,43 @@ def aggregate_pose(rows: list[dict]) -> dict:
         "gesture_events": gesture_events,
     })
     return out
+
+
+def aggregate_hands(rows: list[dict]) -> dict:
+    """hand 행 → 윈도우 집계. 손가락 카운트는 안정 구간(FINGER_SEG_MIN_S 이상 동일 카운트)으로
+    붕괴해 전이 프레임을 버린다 — '3→2→5' 같은 셈 제스처가 사실 시퀀스로 남는다."""
+    if not rows:
+        return {"hand_frames": 0}
+    seen = [r for r in rows if r["hands"]]
+    out = {"hand_frames": len(rows), "hand_seen_ratio": round(len(seen) / len(rows), 2)}
+    if not seen:
+        return out
+    segs = _finger_segments(seen)
+    if segs:
+        out["finger_segments"] = segs
+        # 시퀀스는 셈 제스처(비0)만 — 주먹/내림(0)은 segments에 사실로 남는다
+        out["finger_sequence"] = [s["count"] for s in segs if s["count"]]
+    return out
+
+
+def _finger_segments(seen: list[dict], min_dur_s: float = FINGER_SEG_MIN_S) -> list[dict]:
+    """중위수 스무딩(±2행) 후 동일 카운트 연속 구간으로 붕괴 — 짧은 전이는 버리고, 전이로
+    끊겼던 같은 카운트는 재결합한다(검출 플리커가 시퀀스를 쪼개지 않게)."""
+    counts = [r["fingers"] for r in seen]
+    sm = [int(np.median(counts[max(0, i - 2):i + 3])) for i in range(len(counts))]
+    segs: list[dict] = []
+    start = 0
+    for i in range(1, len(sm) + 1):
+        if i < len(sm) and sm[i] == sm[start]:
+            continue
+        if seen[i - 1]["t"] - seen[start]["t"] >= min_dur_s:
+            if segs and segs[-1]["count"] == sm[start]:
+                segs[-1]["end_s"] = round(seen[i - 1]["t"], 2)
+            else:
+                segs.append({"count": sm[start], "start_s": round(seen[start]["t"], 2),
+                             "end_s": round(seen[i - 1]["t"], 2)})
+        start = i
+    return segs
 
 
 def _count_blinks(rows: list[dict]) -> int:
@@ -387,4 +509,12 @@ def describe_visual(m: dict) -> str:
                 f"- 손동작: 손목 변위 평균 {m['wrist_motion']}(어깨폭/프레임), "
                 f"뚜렷한 제스처 {m['gesture_events']}회"
             )
+    if m.get("finger_sequence"):
+        seq = "→".join(str(c) for c in m["finger_sequence"])
+        spans = ", ".join(f"{s['count']}개 {s['start_s']}~{s['end_s']}초"
+                          for s in m.get("finger_segments", []) if s["count"])
+        lines.append(
+            f"- 손가락 펼침(안정 구간): {seq}" + (f" ({spans})" if spans else "")
+            + f" — 손 검출률 {int(m.get('hand_seen_ratio', 0) * 100)}%"
+        )
     return "\n".join(lines)

@@ -95,9 +95,11 @@ class ProsodyExtractor:
         peaks, _ = find_peaks(idb, prominence=self.min_dip_db)
         pitch = snd.to_pitch_ac()
         nuclei = 0
+        peaks_above = 0  # 유성성 게이트 전 피크 — 무성 발성(속삭임)의 속도 참고치
         for pk in peaks:
             if idb[pk] < threshold:
                 continue  # 묵음 구간 피크 제외
+            peaks_above += 1
             f0 = pitch.get_value_at_time(it[pk])
             if f0 is None or np.isnan(f0) or f0 <= 0:
                 continue  # 유성성 게이트(치찰음·잡음 피크 배제)
@@ -111,6 +113,10 @@ class ProsodyExtractor:
             "syllable_nuclei": nuclei,
             "speech_rate_syl_per_s": round(nuclei / dur, 2),              # 쉼 포함
             "articulation_rate_syl_per_s": round(nuclei / phonation, 2),  # 쉼 제외
+            "phonation_s": round(phonation, 2),                           # 집계 재계산용(합산 가능)
+            # 속삭임은 유성핵이 0으로 무너진다 — 무성 포함 피크 기준 속도를 참고치로 함께 싣는다
+            "intensity_peak_nuclei": peaks_above,
+            "intensity_peak_artic_per_s": round(peaks_above / phonation, 2),
         }
         pause_stats = {
             "pause_count_ge_0p25": len(pauses),
@@ -152,7 +158,10 @@ def _pitch_metrics(snd) -> dict:
     fv = f[voiced]
     tv = t[voiced]
     if fv.size < 5:
-        return {"voiced_frames": int(fv.size), "note": "유성 프레임 부족(피치 측정 불가)"}
+        # voiced_ratio는 여기서도 싣는다 — 발화 에너지가 있는데 유성이 희박하면 그 자체가
+        # 무성 우세 발성(속삭임형)의 객관 신호다(피치 실패 ≠ 측정 실패).
+        return {"voiced_frames": int(fv.size), "voiced_ratio": round(float(voiced.mean()), 3),
+                "note": "유성 프레임 부족(피치 측정 불가)"}
     st = 12.0 * np.log2(fv)
     slope, intercept = np.polyfit(tv, st, 1)
     resid = st - (slope * tv + intercept)
@@ -243,18 +252,31 @@ def describe_vocal(m: dict) -> str:
     lines: list[str] = []
     pitch, rate = m.get("pitch", {}), m.get("rate", {})
     pauses, energy = m.get("pauses", {}), m.get("energy", {})
+    vr = pitch.get("voiced_ratio")
+    whisperish = vr is not None and vr < 0.15
     if "sd_semitone" in pitch:
         lines.append(
             f"- 억양 변화: F0 표준편차 {pitch['sd_semitone']} semitone"
             f"(2 미만이면 단조), PDQ {pitch['pdq']}"
         )
     elif pitch:
-        lines.append("- 억양: 유성 구간 부족 — 피치 기반 평가 근거 없음")
-    if "articulation_rate_syl_per_s" in rate:
         lines.append(
-            f"- 발화 속도: 조음 {rate['articulation_rate_syl_per_s']} 음절/초"
-            f"(한국어 보통 5.8~6.9), 쉼 포함 {rate['speech_rate_syl_per_s']} 음절/초"
+            "- 억양: 유성 구간 부족 — 피치 기반 평가 근거 없음"
+            + (f" (유성 비율 {int((vr or 0) * 100)}% — 발화 에너지 대비 성대 진동 희박, "
+               "무성 우세 발성 = 속삭임형 신호)" if whisperish else "")
         )
+    if "articulation_rate_syl_per_s" in rate:
+        if rate.get("syllable_nuclei") == 0 and rate.get("intensity_peak_nuclei"):
+            lines.append(
+                f"- 발화 속도: 유성 음절핵 0(무성 발성) — 강도 피크 기준 "
+                f"{rate['intensity_peak_artic_per_s']} 피크/초(참고치, "
+                "표준 음절 척도 5.8~6.9와 직접 비교 불가)"
+            )
+        else:
+            lines.append(
+                f"- 발화 속도: 조음 {rate['articulation_rate_syl_per_s']} 음절/초"
+                f"(한국어 보통 5.8~6.9), 쉼 포함 {rate['speech_rate_syl_per_s']} 음절/초"
+            )
     if "pause_count_ge_0p25" in pauses:
         med = pauses.get("juncture_median_s")
         lines.append(

@@ -140,3 +140,18 @@ def test_real_clip_matches_poc_direction():
     assert m["pitch"]["sd_semitone"] > 2.0          # 젬마 "단조로운 톤" 반증 방향
     assert 5.0 <= m["rate"]["articulation_rate_syl_per_s"] <= 7.5  # 한국어 정상 범위
     assert m["pauses"]["pause_count_ge_0p25"] == 0  # "호흡 짧음"(유일 그라운딩) 방향
+
+
+def test_whisper_unvoiced_slow_is_distinguished():
+    """무성 발성(잡음 음절 버스트) — 유성핵 0이어도 '발화 없음'으로 읽히지 않아야 한다:
+    voiced_ratio·강도 피크 참고치가 남고 describe가 무성 우세를 명시한다(속삭임 기준 파일 갭)."""
+    rng = np.random.default_rng(7)
+    t = np.arange(int(4.0 * SR)) / SR
+    am = np.clip(np.sin(2 * np.pi * 2.0 * t), 0.0, 1.0)  # 2Hz 음절 모사 버스트
+    m = ProsodyExtractor().extract(_pcm(0.3 * am * rng.standard_normal(t.size)))
+    assert m is not None
+    assert m["pitch"].get("voiced_ratio", 1.0) < 0.2  # 무성 우세가 수치로 남는다
+    assert m["rate"]["intensity_peak_nuclei"] > 0     # 무성 포함 피크 참고치는 살아 있다
+    assert m["rate"]["phonation_s"] > 0
+    if m["rate"]["syllable_nuclei"] == 0:
+        assert "무성" in describe_vocal(m)            # 0.0음절/초로 오독되지 않게 명시

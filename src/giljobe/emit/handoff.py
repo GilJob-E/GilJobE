@@ -40,7 +40,13 @@ def _agg_pitch(ms: list[dict]) -> dict:
     선언적 하강(declination)까지 섞여 억양 생동감이 인위 팽창한다."""
     valid = [(m["pitch"], m["duration_s"]) for m in ms if "sd_semitone" in m.get("pitch", {})]
     if not valid:
-        return {"note": "유성 구간 부족(피치 측정 불가)"}
+        # 피치는 못 내도 voiced_ratio는 운반한다 — 무성 우세 발성(속삭임형)의 턴 단위 신호
+        out = {"note": "유성 구간 부족(피치 측정 불가)"}
+        vr = _wmean([(m["pitch"].get("voiced_ratio"), m.get("duration_s", 0))
+                     for m in ms if m.get("pitch")], 3)
+        if vr is not None:
+            out["voiced_ratio"] = vr
+        return out
     out: dict = {"voiced_frames": sum(p["voiced_frames"] for p, _ in valid)}
     out["voiced_ratio"] = _wmean([(p.get("voiced_ratio"), d) for p, d in valid], 3)
     frames = [(p, p["voiced_frames"]) for p, _ in valid]
@@ -53,17 +59,25 @@ def _agg_pitch(ms: list[dict]) -> dict:
 def _agg_rate(ms: list[dict], dur: float) -> dict:
     """비율은 평균 내지 않고 합산 후 재계산 — 짧은 꼬리 구간이 같은 가중을 받는 함정 회피."""
     nuclei = sum(m.get("rate", {}).get("syllable_nuclei", 0) for m in ms)
+    peaks = sum(m.get("rate", {}).get("intensity_peak_nuclei", 0) for m in ms)
     phonation = 0.0
     for m in ms:
         r = m.get("rate", {})
+        if r.get("phonation_s"):  # 신 스키마 — 합산 가능 필드가 정본
+            phonation += r["phonation_s"]
+            continue
         artic = r.get("articulation_rate_syl_per_s") or 0
-        if artic > 0:
+        if artic > 0:  # 구 레코드 폴백 — nuclei/artic로 역산(무성 구간은 복원 불가)
             phonation += r.get("syllable_nuclei", 0) / artic
-    return {
+    out = {
         "syllable_nuclei": nuclei,
         "speech_rate_syl_per_s": round(nuclei / dur, 2) if dur else None,
         "articulation_rate_syl_per_s": round(nuclei / phonation, 2) if phonation else None,
     }
+    if peaks:
+        out["intensity_peak_nuclei"] = peaks
+        out["intensity_peak_artic_per_s"] = round(peaks / phonation, 2) if phonation else None
+    return out
 
 
 def _agg_pauses(ms: list[dict]) -> dict:
@@ -138,12 +152,32 @@ def agg_visual(metrics: list[dict | None]) -> dict | None:
     ms = [m for m in metrics if m]
     if not ms:
         return None
-    out = {"windows": len(ms)}
+    out: dict = {"windows": len(ms)}
     out.update(_agg_lane(ms, "face_frames", "face_seen_ratio", FACE_KEYS,
                          sums=["blink_count"], maxes=["smile_max"]))
     out.update(_agg_lane(ms, "pose_frames", "pose_seen_ratio", POSE_KEYS,
                          sums=["gesture_events"], maxes=[]))
+    if any("hand_frames" in m for m in ms):  # 손 레인 켜진 배포에서만 키 추가(구 shape 보존)
+        out.update(_agg_lane(ms, "hand_frames", "hand_seen_ratio", [], sums=[], maxes=[]))
+        segs = _merge_finger_segments(ms)
+        if segs:
+            out["finger_segments"] = segs
+            out["finger_sequence"] = [s["count"] for s in segs if s["count"]]
     return out
+
+
+def _merge_finger_segments(ms: list[dict]) -> list[dict]:
+    """윈도우별 finger_segments를 시간순 연결 — 경계에서 같은 카운트로 이어지면 한 구간으로
+    (집계 shape = per-구간 shape 원칙: describe_visual을 그대로 재사용)."""
+    segs = sorted((s for m in ms for s in m.get("finger_segments", [])),
+                  key=lambda s: s["start_s"])
+    merged: list[dict] = []
+    for s in segs:
+        if merged and merged[-1]["count"] == s["count"]:
+            merged[-1] = {**merged[-1], "end_s": s["end_s"]}
+        else:
+            merged.append(dict(s))
+    return merged
 
 
 def agg_nonverbal(nvs: list[dict]) -> dict:
@@ -272,10 +306,14 @@ def render_prompt_fragment(handoff: dict, max_chars: int = 880) -> str:
     if sp:
         pitch, rate, pauses, energy = (sp.get(k, {}) for k in ("pitch", "rate", "pauses", "energy"))
         bits = []
-        if rate.get("articulation_rate_syl_per_s") is not None:
+        if rate.get("syllable_nuclei") == 0 and rate.get("intensity_peak_artic_per_s"):
+            bits.append(f"무성 발성(유성핵 0) — 강도 피크 {rate['intensity_peak_artic_per_s']}/s 참고")
+        elif rate.get("articulation_rate_syl_per_s") is not None:
             bits.append(f"조음 {rate['articulation_rate_syl_per_s']}음절/s(보통 5.8~6.9)")
         if pitch.get("sd_semitone") is not None:
             bits.append(f"F0 변동 {pitch['sd_semitone']}st(2 미만이면 단조)")
+        elif (vr := pitch.get("voiced_ratio")) is not None and vr < 0.15:
+            bits.append(f"유성 비율 {int(vr * 100)}%(무성 우세 — 속삭임형 발성)")
         if pauses.get("pause_count_ge_0p25") is not None:
             bits.append(f"쉼(0.25s 이상) {pauses['pause_count_ge_0p25']}회")
         if energy.get("half_to_half_delta_db") is not None:
@@ -285,6 +323,8 @@ def render_prompt_fragment(handoff: dict, max_chars: int = 880) -> str:
     vis = handoff.get("visual") or {}
     if vis.get("face_frames"):
         bits = [f"미소 평균 {vis.get('smile_mean')}", f"시선 이탈 {vis.get('gaze_off_mean')}"]
+        if vis.get("finger_sequence"):
+            bits.append("손가락 펼침 " + "→".join(str(c) for c in vis["finger_sequence"]))
         if (vis.get("wrist_visible") or 0) < 0.2:
             bits.append("손동작 관측 불가(평가 금지)")
         parts.append("시각 실측: " + " · ".join(str(b) for b in bits) + ".")

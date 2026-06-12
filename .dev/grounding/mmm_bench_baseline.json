@@ -1,0 +1,164 @@
+{
+  "audio_test": {
+    "prosody": {
+      "duration_s": 13.8,
+      "pitch": {
+        "voiced_frames": 0,
+        "voiced_ratio": 0.0,
+        "note": "유성 프레임 부족(피치 측정 불가)"
+      },
+      "rate": {
+        "syllable_nuclei": 0,
+        "speech_rate_syl_per_s": 0.0,
+        "articulation_rate_syl_per_s": 0.0,
+        "phonation_s": 7.71,
+        "intensity_peak_nuclei": 20,
+        "intensity_peak_artic_per_s": 2.59
+      },
+      "pauses": {
+        "pause_count_ge_0p25": 1,
+        "short_juncture_count_0p1_0p25": 4,
+        "juncture_median_s": 0.152,
+        "longest_pauses_s": [
+          5.47,
+          0.24,
+          0.15,
+          0.12,
+          0.1
+        ]
+      },
+      "energy": {
+        "rel_db_slope_per_s": -2.761,
+        "half_to_half_delta_db": -32.05,
+        "sounding_trough_db": -87.37
+      }
+    },
+    "vision": {
+      "face_frames": 420,
+      "face_seen_ratio": 1.0,
+      "smile_mean": 0.035,
+      "smile_max": 0.427,
+      "smile_ratio": 0.08,
+      "brow_down_mean": 0.0,
+      "mouth_press_mean": 0.026,
+      "blink_count": 0,
+      "gaze_off_mean": 0.184,
+      "yaw_std_deg": 1.18,
+      "pitch_std_deg": 2.58,
+      "lip_motion": 0.00147,
+      "pose_frames": 420,
+      "pose_seen_ratio": 1.0,
+      "posture_std": 0.0079,
+      "head_sway": 0.0272,
+      "wrist_visible": 0.0,
+      "wrist_motion": 0.0,
+      "gesture_events": 0,
+      "hand_frames": 420,
+      "hand_seen_ratio": 0.0,
+      "_frames_fed": 420,
+      "_wall_s": 7.1
+    }
+  },
+  "vision_test": {
+    "prosody": {
+      "duration_s": 24.64,
+      "pitch": {
+        "voiced_frames": 462,
+        "voiced_ratio": 0.183,
+        "mean_hz": 125.5,
+        "sd_semitone": 3.9,
+        "pdq": 0.2262,
+        "range_st_10_90": 10.78,
+        "detrended_sd_semitone": 3.85,
+        "octave_error_frac": 0.0
+      },
+      "rate": {
+        "syllable_nuclei": 38,
+        "speech_rate_syl_per_s": 1.54,
+        "articulation_rate_syl_per_s": 4.03,
+        "phonation_s": 9.42,
+        "intensity_peak_nuclei": 55,
+        "intensity_peak_artic_per_s": 5.84
+      },
+      "pauses": {
+        "pause_count_ge_0p25": 7,
+        "short_juncture_count_0p1_0p25": 5,
+        "juncture_median_s": 0.452,
+        "longest_pauses_s": [
+          10.18,
+          1.36,
+          0.73,
+          0.7,
+          0.58
+        ]
+      },
+      "energy": {
+        "rel_db_slope_per_s": 0.332,
+        "half_to_half_delta_db": -2.52,
+        "sounding_trough_db": -94.46
+      }
+    },
+    "vision": {
+      "face_frames": 743,
+      "face_seen_ratio": 1.0,
+      "smile_mean": 0.0,
+      "smile_max": 0.002,
+      "smile_ratio": 0.0,
+      "brow_down_mean": 0.001,
+      "mouth_press_mean": 0.014,
+      "blink_count": 0,
+      "gaze_off_mean": 0.178,
+      "yaw_std_deg": 1.05,
+      "pitch_std_deg": 1.12,
+      "lip_motion": 0.00101,
+      "pose_frames": 743,
+      "pose_seen_ratio": 1.0,
+      "posture_std": 0.0389,
+      "head_sway": 0.0303,
+      "wrist_visible": 0.23,
+      "wrist_motion": 0.0435,
+      "gesture_events": 6,
+      "hand_frames": 743,
+      "hand_seen_ratio": 0.31,
+      "finger_segments": [
+        {
+          "count": 4,
+          "start_s": 9.43,
+          "end_s": 10.5
+        },
+        {
+          "count": 0,
+          "start_s": 10.67,
+          "end_s": 11.83
+        },
+        {
+          "count": 2,
+          "start_s": 11.9,
+          "end_s": 13.13
+        },
+        {
+          "count": 0,
+          "start_s": 13.23,
+          "end_s": 14.17
+        },
+        {
+          "count": 5,
+          "start_s": 14.33,
+          "end_s": 15.37
+        },
+        {
+          "count": 0,
+          "start_s": 15.53,
+          "end_s": 16.93
+        }
+      ],
+      "finger_sequence": [
+        4,
+        2,
+        5
+      ],
+      "_frames_fed": 743,
+      "_wall_s": 13.2
+    }
+  }
+}

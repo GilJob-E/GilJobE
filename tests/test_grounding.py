@@ -12,8 +12,11 @@ import numpy as np
 import pytest
 
 from giljobe.analysis.grounding import (
+    _FINGERS,
     aggregate_face,
+    aggregate_hands,
     aggregate_pose,
+    count_extended_fingers,
     describe_visual,
     maybe_vision_grounder,
 )
@@ -76,6 +79,71 @@ def test_aggregate_pose_empty():
     assert aggregate_pose([]) == {"pose_frames": 0}
 
 
+# ─────────────────────────── 손가락 카운트 (순수 함수, mediapipe 불요) ───────────────────────────
+
+def _hand_pts(fingers=(True, True, True, True), thumb=True):
+    """합성 21랜드마크 — 손목(0,0,0)·중지MCP(0,1,0) 기준. 반경비(펴짐 1.5/접힘 0.67)와
+    엄지 거리(폄 1.0/접힘 0.2)만 기준을 만족시키는 최소 기하."""
+    pts = [(0.0, 0.0, 0.0)] * 21
+    pts[9] = (0.0, 1.0, 0.0)
+    for ext, (pip, tip) in zip(fingers, _FINGERS):
+        pts[pip] = (0.0, 1.2, 0.0)
+        pts[tip] = (0.0, 1.8, 0.0) if ext else (0.0, 0.8, 0.0)
+    pts[4] = (1.0, 1.0, 0.0) if thumb else (0.2, 1.0, 0.0)
+    return pts
+
+
+def test_count_extended_fingers_basic_shapes():
+    assert count_extended_fingers(_hand_pts()) == 5                                          # 보자기
+    assert count_extended_fingers(_hand_pts((False,) * 4, thumb=False)) == 0                 # 주먹
+    assert count_extended_fingers(_hand_pts((True, True, False, False), thumb=False)) == 2   # V
+
+
+def test_count_rejects_hallucinated_marginal_finger():
+    """가림 환각 대역(반경비 ~1.1)은 펴짐으로 세지 않는다 — 기준 영상 '3'의 접힌 검지 케이스."""
+    pts = _hand_pts((False, True, True, True), thumb=False)
+    pts[8] = (0.0, 1.32, 0.0)  # 검지 끝 반경비 1.32/1.2=1.1 < FINGER_RADIAL
+    assert count_extended_fingers(pts) == 3
+
+
+def _hand_seq_rows(spec: list[tuple[int | None, int]]) -> list[dict]:
+    """[(카운트|None=미검출, 행 수)] → 0.1s 간격 hand 행."""
+    rows, t = [], 0.0
+    for count, n in spec:
+        for _ in range(n):
+            rows.append({"t": round(t, 2), "hands": 0} if count is None
+                        else {"t": round(t, 2), "hands": 1, "fingers": count})
+            t = round(t + 0.1, 2)
+    return rows
+
+
+def test_aggregate_hands_empty_and_unseen():
+    assert aggregate_hands([]) == {"hand_frames": 0}
+    agg = aggregate_hands(_hand_seq_rows([(None, 2)]))
+    assert agg == {"hand_frames": 2, "hand_seen_ratio": 0.0}  # 미검출 → 시퀀스 없음(단정 차단)
+
+
+def test_aggregate_hands_stable_segments_and_sequence():
+    """3(1s)→전이 1행→주먹(0.6s)→2(1s)→짧은 1(0.2s, 전이로 버려짐)→5(1s) = 시퀀스 3→2→5.
+    주먹(0)은 segments에 사실로 남고 시퀀스에선 빠진다 — 기준 영상 3-2-5 패턴."""
+    rows = _hand_seq_rows([(3, 10), (4, 1), (0, 6), (2, 10), (1, 2), (5, 10)])
+    agg = aggregate_hands(rows)
+    assert agg["hand_seen_ratio"] == 1.0
+    assert agg["finger_sequence"] == [3, 2, 5]
+    assert [s["count"] for s in agg["finger_segments"]] == [3, 0, 2, 5]
+
+
+def test_describe_visual_finger_sequence_line():
+    m = {"finger_sequence": [3, 2, 5], "hand_seen_ratio": 0.4,
+         "finger_segments": [{"count": 3, "start_s": 1.0, "end_s": 2.0},
+                             {"count": 0, "start_s": 2.2, "end_s": 3.0},
+                             {"count": 2, "start_s": 3.1, "end_s": 4.0},
+                             {"count": 5, "start_s": 4.4, "end_s": 5.2}]}
+    text = describe_visual(m)
+    assert "3→2→5" in text
+    assert "0개" not in text  # 주먹 스팬은 라벨 라인에 안 끼운다
+
+
 # ─────────────────────────── describe(주입 라벨 — 차단 게이팅) ───────────────────────────
 
 def test_describe_visual_blocks_unobservable_gesture():
@@ -118,6 +186,7 @@ def test_grounder_lane_coverage_reset_close():
         m = g.window_metrics(0.0, 1.0)
         assert m is not None and m["face_frames"] == 4 and m["face_seen_ratio"] == 0.0
         assert m["pose_frames"] == 4
+        assert m["hand_frames"] == 4 and m["hand_seen_ratio"] == 0.0  # 모델 있으면 손 레인 동행
         assert g.window_metrics(5.0, 8.0) is None  # 빈 윈도우 → None(주입/emit 생략 신호)
 
         g.reset()  # 새 턴 — 이전 행 격리(t가 0으로 되돌아가도 MediaPipe ts는 단조 유지)

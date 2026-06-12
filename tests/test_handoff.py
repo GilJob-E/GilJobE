@@ -116,3 +116,41 @@ def test_render_prompt_fragment_single_line_budget_no_quotes():
     assert "라마바" not in frag  # 전사 인용 금지 — 시간 참조만
     assert "(4~12초)" in frag and "에너지 -2.5dB" in frag
     assert "실측치만 정본" in frag
+
+
+def test_agg_visual_merges_finger_segments_across_windows():
+    """경계에서 같은 카운트로 이어지는 구간은 병합 — 손 레인 없는 윈도우 섞여도 무영향."""
+    from giljobe.emit.handoff import agg_visual
+
+    v1 = {**_visual(80), "hand_frames": 80, "hand_seen_ratio": 0.5,
+          "finger_segments": [{"count": 3, "start_s": 1.0, "end_s": 2.0},
+                              {"count": 2, "start_s": 2.5, "end_s": 3.5}]}
+    v2 = {**_visual(80), "hand_frames": 80, "hand_seen_ratio": 0.5,
+          "finger_segments": [{"count": 2, "start_s": 3.5, "end_s": 4.2},
+                              {"count": 5, "start_s": 5.0, "end_s": 6.0}]}
+    agg = agg_visual([v1, v2])
+    assert [s["count"] for s in agg["finger_segments"]] == [3, 2, 5]
+    assert agg["finger_sequence"] == [3, 2, 5]
+    assert agg_visual([_visual(80)]) is not None  # 손 키 없는 구 shape — hand 키 미오염
+    assert "hand_frames" not in agg_visual([_visual(80)])
+
+
+def test_fragment_carries_finger_sequence_and_whisper_signals():
+    """Realtime fragment에 손가락 시퀀스 + 무성(속삭임형) 신호가 실린다 — 기준 파일 2종 운반 가드."""
+    from giljobe.emit.handoff import render_prompt_fragment
+
+    sp = _speech(4.0, 0, 0.0)
+    sp["pitch"] = {"voiced_frames": 2, "voiced_ratio": 0.03}
+    sp["rate"] = {"syllable_nuclei": 0, "speech_rate_syl_per_s": 0.0,
+                  "articulation_rate_syl_per_s": 0.0, "phonation_s": 3.0,
+                  "intensity_peak_nuclei": 9, "intensity_peak_artic_per_s": 3.0}
+    vis = {**_visual(80), "hand_frames": 80, "hand_seen_ratio": 0.6,
+           "finger_segments": [{"count": 3, "start_s": 1.0, "end_s": 2.0},
+                               {"count": 2, "start_s": 2.5, "end_s": 3.5},
+                               {"count": 5, "start_s": 4.0, "end_s": 5.0}]}
+    h = build_turn_handoff("s", [_sentence(0.5, 4.5, "가나다.", speech=sp, visual=vis, nv=None), TURN_END])
+    frag = render_prompt_fragment(h)
+    assert "손가락 펼침 3→2→5" in frag
+    assert "무성 발성(유성핵 0)" in frag and "3.0/s" in frag
+    assert "유성 비율 3%(무성 우세" in frag
+    assert "\n" not in frag and len(frag) <= 880
