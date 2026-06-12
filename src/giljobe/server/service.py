@@ -22,6 +22,8 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
+from giljobe.emit.handoff import build_turn_handoff
+
 from .app import build_subscriber
 from .config import SubscriberConfig
 
@@ -69,6 +71,9 @@ def signals_payload(session_id: str, records: list[dict]) -> dict:
         "transcriptFull": (latest_te or {}).get("transcript_full", "") if latest_te else "",
         "windowTranscripts": window_tx,
         "latestTurnEnd": latest_te,
+        # 턴 완결 후에만 채워짐(그 전 None). 순수 파이썬 집계(sub-ms)라 폴링마다 lazy 계산 —
+        # 소비자(ai-engine)는 prompt_block을 join해 analysisBlock으로 쓴다(2026-06-12 A안 확정).
+        "turnHandoff": build_turn_handoff(session_id, records),
         "rawMediaExposed": False,
         "rawSecretsExposed": False,
     }
