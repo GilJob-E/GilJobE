@@ -44,8 +44,8 @@ SMILE_TH = 0.2      # smile_pct 기준(PoC와 동일)
 VIS_TH = 0.5        # pose visibility 임계(프레임 안/밖)
 GESTURE_VEL = 0.15  # 어깨폭 15%/frame 이상 손목 변위 = 뚜렷한 손동작(PoC와 동일)
 WRIST_OBSERVABLE = 0.2  # 이 미만이면 손이 화면 밖 — 제스처 평가 차단 신호
-FINGER_RADIAL = 1.25    # 손목→끝/손목→PIP 반경비 — 펴짐 1.4대·접힘 0.6~0.7·가림 환각 1.1(벤치 실측)
-THUMB_AWAY = 0.75       # 엄지끝→중지MCP/손바닥길이 — 접힘(손바닥 가로지름) 0.55~0.67·폄 0.83+(벤치 실측)
+FINGER_RADIAL = 1.15    # 손목→끝/손목→PIP 반경비 — 펴짐>1.15·접힘 0.6~0.7·가림 환각 1.1(QIVD 95문항 스윕 최적; 환각 1.1 위 마진 유지)
+THUMB_AWAY = 0.68       # 엄지끝→중지MCP/손바닥길이 — 접힘(손바닥 가로지름) 0.55~0.67·폄 0.68+(QIVD 스윕 최적)
 FINGER_SEG_MIN_S = 0.4  # 동일 카운트 안정 구간 하한 — 미만은 셈 전이 노이즈로 버린다
 # Pose 33 랜드마크 인덱스
 _NOSE, _LSH, _RSH, _LWR, _RWR = 0, 11, 12, 15, 16
@@ -315,18 +315,20 @@ def _hand_row(t_s: float, res) -> dict:
     return {"t": t_s, "hands": len(res.hand_world_landmarks), "fingers": fingers}
 
 
-def count_extended_fingers(pts: list[tuple[float, ...]]) -> int:
+def count_extended_fingers(pts: list[tuple[float, ...]], *,
+                           radial: float = FINGER_RADIAL, thumb_away: float = THUMB_AWAY) -> int:
     """Hand 21 랜드마크(3D world 권장) → 펴진 손가락 수.
 
     관절각 기준은 기각 — 가려진 손가락은 MediaPipe가 '펴짐' 기하로 환각해 각도가 통과한다
     (기준 영상 '3'의 접힌 검지: 체인 길이는 뭉개졌는데 관절각 160~180도 — hands_probe.py).
     네 손가락은 손목 반경비(접히면 끝이 PIP 안쪽으로 들어온다), 엄지는 손바닥을 가로지르는
-    접힘 특성상 끝→중지MCP 거리로 판정. 임계는 기준 영상 3-2-5 실측 분리값(상수 주석)."""
+    접힘 특성상 끝→중지MCP 거리로 판정. 임계 기본값은 상수(.vision_test 3-2-5 + QIVD 95문항
+    스윕 최적). radial/thumb_away는 임계 스윕용 — 프로덕션은 기본값."""
     wrist = pts[0]
     n = sum(1 for pip, tip in _FINGERS
-            if math.dist(wrist, pts[tip]) > math.dist(wrist, pts[pip]) * FINGER_RADIAL)
+            if math.dist(wrist, pts[tip]) > math.dist(wrist, pts[pip]) * radial)
     palm = math.dist(wrist, pts[_MIDDLE_MCP])
-    if palm > 1e-9 and math.dist(pts[_THUMB_TIP], pts[_MIDDLE_MCP]) > palm * THUMB_AWAY:
+    if palm > 1e-9 and math.dist(pts[_THUMB_TIP], pts[_MIDDLE_MCP]) > palm * thumb_away:
         n += 1
     return n
 

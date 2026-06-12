@@ -35,6 +35,26 @@ MediaPipe가 가려진 검지를 모든 경로에서 "그럴듯하게 펴진" �
 즉 기하 후처리로 복구 불가. 가림 없는 일반 셈 제스처(2·5·주먹)는 정확. 필요해지면
 후속 후보: 손가락별 신뢰 게이팅(모델 교체/앙상블) 또는 "검지·엄지 가림형 3" 패턴 인식.
 
+## QIVD 95문항 임계 스윕 (2026-06-12 후속)
+
+`.vision_test` 1개로 정한 임계(radial 1.25 / thumb 0.75)를 QIVD `object_counting`의
+"How many fingers…" **95문항**(정수 답 0~10, 양손 포함, 정답 라벨 존재)으로 재검증.
+랜드마크 1회 추출 캐시(`qivd_finger_landmarks.json`) 후 임계 그리드 스윕
+(`qivd_finger_sweep.py`).
+
+- 1.25/0.75 (구): 전체 0.684 · 레인답변가능 0.714. 오차가 **과소 카운트 지배**(과소 20 vs 과대 6)
+  — 측면/약간 굽은 손가락을 접힘으로 오판.
+- **1.15/0.68 (신, 스윕 최적)**: 전체 0.737 · 레인답변가능 0.769. 과소 20→9로 개선
+  (과대 6→12 trade-off, 순증). radial 1.15는 환각 검지(1.1) 위 마진 유지 → 단위테스트
+  `test_count_rejects_hallucinated_marginal_finger` 통과.
+
+레인 범위 밖(adapter/VLM 영역, 91문항 기준에서 제외):
+- "How many fingers on my **right hand**?" (2건) — 우리는 양손 합산 → 어느 손인지 질문 파싱 필요
+- "How many fingers am I **hiding**?" — 숨긴 손가락(보이지 않는 것) 셈, 기하로 불가
+- "**combine both hands**" — 양손 합산은 맞지만 표현 다양
+
+미검출 4건(IMAGE 모드 + 검출 신뢰도 0.5): 손 자체가 안 잡힘 — 검출 신뢰도/윈도우 폭 후속 검토.
+
 ## 속삭임 변별 설계
 
 - `voiced_ratio`를 피치 실패 시에도 운반(_pitch_metrics 조기 반환 + _agg_pitch not-valid 분기)

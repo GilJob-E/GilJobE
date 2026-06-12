@@ -51,3 +51,6 @@ out/
 # Slice 11+12 검증 하먼스(.dev/slice11/) — 런타임 로그만 제외. evidence JSON·하먼스 .py는 커밋(재현용).
 /.dev/slice11/*.log
 .omc/
+
+# QIVD 손가락 임계 스윕 랜드마크 캐시(재생성 가능, 대용량)
+.dev/grounding/qivd_finger_landmarks.json

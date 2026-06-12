@@ -123,42 +123,48 @@
       "finger_segments": [
         {
           "count": 4,
-          "start_s": 9.43,
-          "end_s": 10.5
+          "start_s": 9.37,
+          "end_s": 10.0
+        },
+        {
+          "count": 5,
+          "start_s": 10.03,
+          "end_s": 10.47
         },
         {
           "count": 0,
-          "start_s": 10.67,
+          "start_s": 10.7,
           "end_s": 11.83
         },
         {
           "count": 2,
-          "start_s": 11.9,
-          "end_s": 13.13
+          "start_s": 11.87,
+          "end_s": 13.17
         },
         {
           "count": 0,
-          "start_s": 13.23,
-          "end_s": 14.17
+          "start_s": 13.27,
+          "end_s": 14.07
         },
         {
           "count": 5,
-          "start_s": 14.33,
-          "end_s": 15.37
+          "start_s": 14.23,
+          "end_s": 15.47
         },
         {
           "count": 0,
-          "start_s": 15.53,
+          "start_s": 15.6,
           "end_s": 16.93
         }
       ],
       "finger_sequence": [
         4,
+        5,
         2,
         5
       ],
       "_frames_fed": 743,
-      "_wall_s": 13.2
+      "_wall_s": 13.7
     }
   }
 }
