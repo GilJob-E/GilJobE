@@ -310,10 +310,14 @@ def render_prompt_fragment(handoff: dict, max_chars: int = 880) -> str:
             bits.append(f"무성 발성(유성핵 0) — 강도 피크 {rate['intensity_peak_artic_per_s']}/s 참고")
         elif rate.get("articulation_rate_syl_per_s") is not None:
             bits.append(f"조음 {rate['articulation_rate_syl_per_s']}음절/s(보통 5.8~6.9)")
-        if pitch.get("sd_semitone") is not None:
+        # 속삭임(유성 비율<15%) 우선 — 유성 프레임이 ≥5개면 sd_semitone이 계산되지만 그 F0는
+        # 희박한 유성 구간에서 나온 저신뢰값이라(속삭임은 사실상 F0 부재) 속삭임 신호를 가린다.
+        # voiced_ratio가 낮으면 속삭임형을 먼저 싣고 F0는 신뢰 낮음으로 강등한다.
+        vr = pitch.get("voiced_ratio")
+        if vr is not None and vr < 0.15:
+            bits.append(f"유성 비율 {int(vr * 100)}%(무성 우세 — 속삭임형 발성, F0 신뢰 낮음)")
+        elif pitch.get("sd_semitone") is not None:
             bits.append(f"F0 변동 {pitch['sd_semitone']}st(2 미만이면 단조)")
-        elif (vr := pitch.get("voiced_ratio")) is not None and vr < 0.15:
-            bits.append(f"유성 비율 {int(vr * 100)}%(무성 우세 — 속삭임형 발성)")
         if pauses.get("pause_count_ge_0p25") is not None:
             bits.append(f"쉼(0.25s 이상) {pauses['pause_count_ge_0p25']}회")
         if energy.get("half_to_half_delta_db") is not None:
@@ -325,8 +329,7 @@ def render_prompt_fragment(handoff: dict, max_chars: int = 880) -> str:
         bits = [f"미소 평균 {vis.get('smile_mean')}", f"시선 이탈 {vis.get('gaze_off_mean')}"]
         if vis.get("finger_sequence"):
             bits.append("손가락 펼침 " + "→".join(str(c) for c in vis["finger_sequence"]))
-        if (vis.get("wrist_visible") or 0) < 0.2:
-            bits.append("손동작 관측 불가(평가 금지)")
+        # 손목 미가시 '평가 금지' 가드 제거(테스트) — 손가락 펼침 수치를 상쇄하지 않도록.
         parts.append("시각 실측: " + " · ".join(str(b) for b in bits) + ".")
     nv = handoff.get("nonverbal") or {}
     if nv.get("windows"):

@@ -154,3 +154,19 @@ def test_fragment_carries_finger_sequence_and_whisper_signals():
     assert "무성 발성(유성핵 0)" in frag and "3.0/s" in frag
     assert "유성 비율 3%(무성 우세" in frag
     assert "\n" not in frag and len(frag) <= 880
+
+
+def test_fragment_whisper_not_masked_by_sparse_f0():
+    """속삭임(유성 비율<15%)인데 유성 프레임이 ≥5개라 sd_semitone이 계산된 케이스(.audio_test
+    실측: voiced_ratio 0.026·sd 1.47·nuclei 3). 저신뢰 F0가 속삭임 신호를 가리지 않아야 한다."""
+    from giljobe.emit.handoff import render_prompt_fragment
+
+    sp = _speech(3.4, 3, 1.07)
+    sp["pitch"] = {"voiced_frames": 50, "voiced_ratio": 0.026, "mean_hz": 472.7,
+                   "sd_semitone": 1.47, "pdq": 0.09, "range_st_10_90": 4.2,
+                   "detrended_sd_semitone": 1.41, "octave_error_frac": 0.0}
+    h = build_turn_handoff("s", [_sentence(0.0, 5.37, "가나다.", speech=sp, visual=None, nv=None), TURN_END])
+    frag = render_prompt_fragment(h)
+    assert "속삭임형 발성" in frag and "유성 비율 2%" in frag   # 속삭임 신호가 표면화
+    assert "F0 변동 1.47st" not in frag                        # 저신뢰 F0는 정상 억양처럼 안 나감
+    assert "조음 1.07음절/s" in frag                           # 느린 발화는 그대로

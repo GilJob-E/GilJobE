@@ -32,12 +32,17 @@ MIN_EMPTY_UTTER_S = 1.0  # 텍스트 없는 발화는 이 길이 이상일 때�
 
 @dataclass
 class Sentence:
-    """확정된 문장 구간 — 윈도워가 이 구간으로 4채널(전사·nv·프로소디·비전)을 자른다."""
+    """확정된 문장 구간 — 윈도워가 이 구간으로 채널을 자른다.
+
+    분석 윈도우는 두 갈래: 비전/nv는 [start_s, end_s](직전 문장 끝→이번 끝, 묵음 포함 —
+    무발화 제스처 포착), 프로소디는 [speech_start_s, end_s](발화 온셋부터 — 묵음 희석 방지).
+    speech_start_s가 None이면 발화 온셋 단서가 없는 경로(timeout/flush)라 start_s로 폴백한다."""
 
     start_s: float
     end_s: float
     text: str
     source: str  # punct(문장부호) | utterance(발화 통째) | timeout(백스톱) | flush(턴 종료)
+    speech_start_s: float | None = None
 
 
 def split_sentences(text: str, t0: float, t1: float) -> list[tuple[str, float, float]]:
@@ -84,7 +89,8 @@ class RealtimeTurnTracker:
     def _reset_locked(self) -> None:
         self._items: dict[str, str] = {}   # itemId → 델타 누적 텍스트
         self._order: list[str] = []        # 델타 도착 순(완료가 itemId 없이 올 때의 폴백 조립 순서)
-        self._seg_start = 0.0              # 다음 발화 시작(미디어 시계)
+        self._seg_start = 0.0              # 분석 윈도우 시작 = 직전 문장 끝(비전/nv용, 묵음 포함)
+        self._speech_start: float | None = None        # 이번 발화 온셋(VAD) — 프로소디 바운드용
         self._speech_stopped_at: float | None = None  # 마지막 VAD stop — completed의 끝 시각 단서
 
     def reset(self) -> None:
@@ -106,8 +112,10 @@ class RealtimeTurnTracker:
                 self._accumulate(item_id, text)
                 return []
             if "speech_started" in kind:
-                # 발화 시작 — 직전 경계 이후 묵음 구간을 건너뛰어 발화 시작점으로 당긴다.
-                self._seg_start = max(self._seg_start, self._snap(media_now))
+                # seg_start(비전/nv 윈도우 시작)는 직전 문장 끝에 그대로 둔다 — 그 사이 묵음을
+                # 다음 문장 윈도우에 포함시켜 무발화 제스처를 포착(묵음 스킵이 버그였음).
+                # 발화 온셋은 프로소디 바운드용으로만 따로 기록(묵음이 음성 지표를 희석하지 않게).
+                self._speech_start = self._snap(media_now)
                 return []
             if "speech_stopped" in kind:
                 self._speech_stopped_at = media_now
@@ -141,21 +149,30 @@ class RealtimeTurnTracker:
     def _complete_utterance(
         self, media_now: float, item_id: str | None, text: str | None
     ) -> list[Sentence]:
-        """발화 확정 — 끝 시각은 VAD stop(있으면) 우선, 둘 다 스냅. 텍스트는 문장 분할."""
+        """발화 확정 — 끝 시각은 VAD stop(있으면) 우선, 둘 다 스냅. 텍스트는 문장 분할.
+
+        윈도우 시작(start)=직전 문장 끝 → 비전/nv가 그 사이 묵음을 덮는다. 텍스트는 발화 온셋
+        (speech)~end에서 분할하고, *첫 조각만* 윈도우 시작을 start로 당겨 묵음을 흡수한다.
+        speech_start_s(프로소디 바운드)는 각 조각의 발화 시작점."""
         end_raw = self._speech_stopped_at if self._speech_stopped_at is not None else media_now
         self._speech_stopped_at = None
         end = max(self._snap(end_raw), self._seg_start + MIN_SENTENCE_S)
         start = self._seg_start
+        speech = self._speech_start if self._speech_start is not None else start
+        speech = min(max(speech, start), end)   # [start, end]로 클램프(스냅 오차 방어)
         self._seg_start = end
+        self._speech_start = None
         utter_text = self._take_text(item_id, text)
         if not utter_text:
             if end - start < MIN_EMPTY_UTTER_S:
                 return []
-            return [Sentence(round(start, 2), round(end, 2), "", "utterance")]
-        return [
-            Sentence(s0, s1, t, "punct")
-            for (t, s0, s1) in split_sentences(utter_text, start, end)
-        ]
+            return [Sentence(round(start, 2), round(end, 2), "", "utterance",
+                             speech_start_s=round(speech, 2))]
+        out: list[Sentence] = []
+        for i, (t, s0, s1) in enumerate(split_sentences(utter_text, speech, end)):
+            win_start = start if i == 0 else s0   # 첫 조각만 묵음 흡수, 나머진 발화-연속
+            out.append(Sentence(round(win_start, 2), s1, t, "punct", speech_start_s=s0))
+        return out
 
     # ── 백스톱/종료 ──
     def tick(self, media_now: float) -> list[Sentence]:

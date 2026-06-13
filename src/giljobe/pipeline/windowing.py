@@ -461,10 +461,13 @@ class TurnWindower:
                 self._submit(self._eval_exec, self._do_eval, start, dur, frames, pcm)
 
     def _do_sentence(self, s: Sentence):
-        """문장 워커 — 한 문장 구간으로 4채널을 자른다: 비전 집계(grounder는 임의 구간 지원),
-        프로소디, nv VLM read(프레임 있을 때만, 균등 샘플 캡). 실패는 채널별 None 강등."""
+        """문장 워커 — 채널별 윈도우를 자른다: 비전/nv는 [start_s, end_s](직전 문장 끝→끝, 묵음
+        포함 — 무발화 제스처 포착), 프로소디는 [speech_start_s, end_s](발화 온셋부터 — 묵음
+        희석 방지). nv read는 end-to-end 프레임 + 발화-바운드 프로소디로 돈다. 실패는 채널별 None."""
+        speech_start = s.speech_start_s if s.speech_start_s is not None else s.start_s
         with self._lock:
-            frames, pcm = self._slice(s.start_s, s.end_s)
+            frames, _ = self._slice(s.start_s, s.end_s)       # 비전/nv: end-to-end(묵음 포함)
+            _, pcm = self._slice(speech_start, s.end_s)        # 프로소디: 발화-바운드
         frames = _cap_frames(frames)
         vision = self._window_vision(s.start_s, s.end_s)
         speech = self._window_prosody(pcm)

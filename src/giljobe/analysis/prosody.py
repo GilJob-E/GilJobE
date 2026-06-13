@@ -254,17 +254,21 @@ def describe_vocal(m: dict) -> str:
     pauses, energy = m.get("pauses", {}), m.get("energy", {})
     vr = pitch.get("voiced_ratio")
     whisperish = vr is not None and vr < 0.15
-    if "sd_semitone" in pitch:
+    # 속삭임 우선: 유성 비율<15%면 sd_semitone이 있어도 그 F0는 희박한 유성 프레임의 저신뢰값
+    # (속삭임은 사실상 F0 부재)이라 속삭임 신호를 가린다 — 속삭임형을 먼저 싣고 F0는 강등한다.
+    if whisperish:
+        lines.append(
+            f"- 억양: 무성 우세 발성(유성 비율 {int((vr or 0) * 100)}%) — 발화 에너지 대비 성대 진동 "
+            "희박 = 속삭임형 신호. 피치 기반 평가 근거 약함"
+            + (f"(F0 표준편차 {pitch['sd_semitone']} semitone은 신뢰 낮음)" if "sd_semitone" in pitch else "")
+        )
+    elif "sd_semitone" in pitch:
         lines.append(
             f"- 억양 변화: F0 표준편차 {pitch['sd_semitone']} semitone"
             f"(2 미만이면 단조), PDQ {pitch['pdq']}"
         )
     elif pitch:
-        lines.append(
-            "- 억양: 유성 구간 부족 — 피치 기반 평가 근거 없음"
-            + (f" (유성 비율 {int((vr or 0) * 100)}% — 발화 에너지 대비 성대 진동 희박, "
-               "무성 우세 발성 = 속삭임형 신호)" if whisperish else "")
-        )
+        lines.append("- 억양: 유성 구간 부족 — 피치 기반 평가 근거 없음")
     if "articulation_rate_syl_per_s" in rate:
         if rate.get("syllable_nuclei") == 0 and rate.get("intensity_peak_nuclei"):
             lines.append(

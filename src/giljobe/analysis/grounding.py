@@ -501,12 +501,10 @@ def describe_visual(m: dict) -> str:
         lines.append(
             f"- 자세: 어깨중점 흔들림 {m['posture_std']}(어깨폭 정규화), 머리 sway {m['head_sway']}"
         )
-        if m.get("wrist_visible", 0.0) < WRIST_OBSERVABLE:
-            lines.append(
-                f"- ★손목이 화면에 거의 안 보임(프레임 {int(m['wrist_visible'] * 100)}%) — "
-                "손동작/제스처는 관측 불가이므로 평가하지 말 것(없다고 단정 금지)"
-            )
-        else:
+        # 손목 미가시 억제 라인 제거(테스트): '관측 불가·평가 금지' 가드가 손가락 펼침
+        # 수치를 상쇄해 소비자가 손을 못 본다고 회피 → 가시일 때만 손동작 실측을 싣고,
+        # 미가시면 아무 줄도 넣지 않는다(손가락 펼침 라인은 아래에서 독립적으로 emit).
+        if m.get("wrist_visible", 0.0) >= WRIST_OBSERVABLE:
             lines.append(
                 f"- 손동작: 손목 변위 평균 {m['wrist_motion']}(어깨폭/프레임), "
                 f"뚜렷한 제스처 {m['gesture_events']}회"

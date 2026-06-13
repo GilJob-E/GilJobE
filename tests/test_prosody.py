@@ -155,3 +155,19 @@ def test_whisper_unvoiced_slow_is_distinguished():
     assert m["rate"]["phonation_s"] > 0
     if m["rate"]["syllable_nuclei"] == 0:
         assert "무성" in describe_vocal(m)            # 0.0음절/초로 오독되지 않게 명시
+
+
+def test_describe_vocal_whisper_not_masked_by_sparse_f0():
+    """속삭임(유성 비율<15%)인데 sd_semitone이 계산된 케이스 — 저신뢰 F0가 속삭임을 가리지 않고,
+    '무성 우세/속삭임형'을 먼저 명시한다(.audio_test 실측: voiced_ratio 0.026·sd 1.47)."""
+    m = {"duration_s": 3.4,
+         "pitch": {"voiced_frames": 50, "voiced_ratio": 0.026, "mean_hz": 472.7,
+                   "sd_semitone": 1.47, "pdq": 0.09},
+         "rate": {"syllable_nuclei": 3, "speech_rate_syl_per_s": 0.88,
+                  "articulation_rate_syl_per_s": 1.07},
+         "pauses": {"pause_count_ge_0p25": 1, "short_juncture_count_0p1_0p25": 2},
+         "energy": {"half_to_half_delta_db": 7.39}}
+    text = describe_vocal(m)
+    assert "속삭임형" in text and "유성 비율 2%" in text
+    assert "F0 표준편차 1.47 semitone(2 미만이면 단조)" not in text  # 정상 억양처럼 안 나감
+    assert "조음 1.07" in text                                       # 느린 발화는 유지

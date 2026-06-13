@@ -146,11 +146,14 @@ def test_describe_visual_finger_sequence_line():
 
 # ─────────────────────────── describe(주입 라벨 — 차단 게이팅) ───────────────────────────
 
-def test_describe_visual_blocks_unobservable_gesture():
+def test_describe_visual_unobservable_gesture_no_guard():
+    """손목 미가시 시 '관측 불가/평가 금지' 가드를 넣지 않는다(가드 제거 — 손가락 펼침 수치를
+    상쇄하던 모순 라인 삭제). 손동작 라인은 손목 가시일 때만, 미소 등 나머지는 그대로."""
     m = {**aggregate_face([_face_row(0.0, smile=0.5)] * 3),
          **aggregate_pose([_pose_row(i * 0.1, wr_l=(0.3, 0.9, 0.1), wr_r=(0.7, 0.9, 0.1)) for i in range(3)])}
     text = describe_visual(m)
-    assert "관측 불가" in text and "단정 금지" in text  # PoC 충돌 #3("제스처 못함") 차단
+    assert "관측 불가" not in text and "단정 금지" not in text  # 손목 가드 제거
+    assert "손동작" not in text                                  # 손목 미가시 → 손동작 라인도 없음
     assert "미소" in text
     assert "긴장" not in text  # 해석 라벨 금지
 

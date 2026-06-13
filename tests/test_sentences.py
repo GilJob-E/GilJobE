@@ -33,11 +33,29 @@ def test_completed_with_text_emits_punct_sentences():
         item_id="item1", text="첫 문장입니다. 둘째 문장입니다.",
     )
     assert [s.source for s in sents] == ["punct", "punct"]
-    assert sents[0].start_s == 0.5          # speech_started가 시작점을 당김
+    # 분석 단위 = '직전 끝 → 이번 끝'. speech_started는 비전/nv 윈도우 시작을 당기지 않으므로
+    # 첫 문장은 턴 원점(0.0)에서 시작한다 — 발화 전 묵음도 그 윈도우에 포함(무발화 제스처 포착).
+    assert sents[0].start_s == 0.0
+    assert sents[0].speech_start_s == 0.5   # 프로소디 바운드는 발화 온셋(묵음 제외)
     assert sents[-1].end_s == 6.0           # VAD stop이 completed 도착 시각보다 우선
     # 다음 발화는 직전 끝에서 시작
     nxt = tr.ingest("transcript.completed", media_now=9.0, item_id="item2", text="셋째.")
     assert nxt[0].start_s == sents[-1].end_s
+
+
+def test_silent_gap_attaches_to_next_sentence():
+    """무발화 공백(말없이 손가락만 보이는 구간)은 다음 문장 윈도우에 귀속된다 — speech_started가
+    공백을 스킵하던 버그 회귀 가드(.vision_test 손가락 4→2→5 시퀀스가 묵음 구간에서 유실됨)."""
+    tr = RealtimeTurnTracker()
+    s1 = tr.ingest("transcript.completed", media_now=3.0, text="첫 발화.")
+    assert s1[0].start_s == 0.0 and s1[0].end_s == 3.0
+    # 3.0~11.0 사이 후보가 말없이 손가락만 보임(speech_started가 와도 윈도우 시작은 안 당김)
+    tr.ingest("vad.speech_started", media_now=9.0)
+    tr.ingest("vad.speech_stopped", media_now=11.0)
+    s2 = tr.ingest("transcript.completed", media_now=11.2, text="둘째 발화.")
+    assert s2[0].start_s == 3.0          # 비전/nv 윈도우: 직전 끝부터 — 3~11s 묵음 포함
+    assert s2[0].speech_start_s == 9.0   # 프로소디 바운드: 발화 온셋부터(묵음 9s 제외)
+    assert s2[0].end_s == 11.0
 
 
 def test_delta_accumulation_feeds_completed_without_text():
