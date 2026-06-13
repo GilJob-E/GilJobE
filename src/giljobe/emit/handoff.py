@@ -325,11 +325,19 @@ def render_prompt_fragment(handoff: dict, max_chars: int = 880) -> str:
         if bits:
             parts.append("음성 실측: " + " · ".join(bits) + ".")
     vis = handoff.get("visual") or {}
-    if vis.get("face_frames"):
-        bits = [f"미소 평균 {vis.get('smile_mean')}", f"시선 이탈 {vis.get('gaze_off_mean')}"]
-        if vis.get("finger_sequence"):
-            bits.append("손가락 펼침 " + "→".join(str(c) for c in vis["finger_sequence"]))
-        # 손목 미가시 '평가 금지' 가드 제거(테스트) — 손가락 펼침 수치를 상쇄하지 않도록.
+    bits = []
+    # face_frames는 '처리 프레임 수'라 캠만 켜면 얼굴이 없어도 양수 → 검출 여부는 face_seen_ratio로
+    # 판정한다. 미검출인데 표정/시선을 실으면(값은 None) 소비자가 '얼굴이 보인다'로 오독한다
+    # (describe_visual과 대칭 — 거기선 face_seen_ratio>0을 체크).
+    if vis.get("face_frames") and (vis.get("face_seen_ratio") or 0) > 0:
+        bits.append(f"미소 평균 {vis.get('smile_mean')}")
+        bits.append(f"시선 이탈 {vis.get('gaze_off_mean')}")
+    elif vis.get("face_frames"):
+        bits.append("얼굴 미검출(표정·시선 평가 불가)")
+    # 손은 얼굴과 독립 — 얼굴이 안 보여도 손가락은 보일 수 있다(손목 가드는 제거됨).
+    if vis.get("finger_sequence"):
+        bits.append("손가락 펼침 " + "→".join(str(c) for c in vis["finger_sequence"]))
+    if bits:
         parts.append("시각 실측: " + " · ".join(str(b) for b in bits) + ".")
     nv = handoff.get("nonverbal") or {}
     if nv.get("windows"):

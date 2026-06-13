@@ -170,3 +170,18 @@ def test_fragment_whisper_not_masked_by_sparse_f0():
     assert "속삭임형 발성" in frag and "유성 비율 2%" in frag   # 속삭임 신호가 표면화
     assert "F0 변동 1.47st" not in frag                        # 저신뢰 F0는 정상 억양처럼 안 나감
     assert "조음 1.07음절/s" in frag                           # 느린 발화는 그대로
+
+
+def test_fragment_face_not_seen_says_undetected_not_none():
+    """캠에 얼굴이 없으면(face_seen_ratio=0, face_frames>0) fragment가 '미소 평균 None'이 아니라
+    '얼굴 미검출'을 실어 소비자 LLM이 '얼굴이 보인다'로 오독하지 않게 한다 — face_frames만 보던
+    가드 버그 회귀 가드(라이브에서 빈 캠인데 면접관이 얼굴 보인다고 답한 사건)."""
+    from giljobe.emit.handoff import render_prompt_fragment
+
+    # grounder가 빈 캠(얼굴 미검출)에서 내는 윈도우 shape: _agg_lane det_n=0 → smile_mean 키 없음
+    win = {"face_frames": 30, "face_seen_ratio": 0.0, "pose_frames": 30, "pose_seen_ratio": 0.0}
+    h = build_turn_handoff("s", [_sentence(0.0, 5.0, "가나다.", speech=None, visual=win, nv=None), TURN_END])
+    frag = render_prompt_fragment(h)
+    assert "얼굴 미검출" in frag                  # 미검출을 명시
+    assert "None" not in frag                     # '미소 평균 None'/'시선 이탈 None'이 새지 않음
+    assert "미소 평균" not in frag                # 표정 수치는 검출 시에만
